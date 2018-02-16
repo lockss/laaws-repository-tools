@@ -38,6 +38,7 @@ import org.archive.format.warc.WARCConstants;
 import org.archive.io.ArchiveRecord;
 import org.archive.io.ArchiveRecordHeader;
 import org.archive.io.warc.WARCReaderFactory;
+import org.lockss.laaws.rs.core.RestLockssRepositoryClient;
 import org.lockss.laaws.rs.model.ArtifactIdentifier;
 import org.lockss.laaws.rs.util.ArtifactFactory;
 import org.lockss.laaws.rs.model.Artifact;
