@@ -37,6 +37,8 @@ import org.apache.http.ProtocolVersion;
 import org.apache.http.message.BasicStatusLine;
 import org.junit.Before;
 import org.junit.Test;
+import org.lockss.laaws.rs.core.LocalLockssRepositoryClient;
+import org.lockss.laaws.rs.core.LockssRepositoryClient;
 import org.lockss.laaws.rs.model.Artifact;
 import org.lockss.laaws.rs.model.ArtifactIdentifier;
 import org.lockss.laaws.rs.model.ArtifactIndexData;
