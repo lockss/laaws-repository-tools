@@ -37,8 +37,8 @@ import org.apache.http.ProtocolVersion;
 import org.apache.http.message.BasicStatusLine;
 import org.junit.Before;
 import org.junit.Test;
-import org.lockss.laaws.rs.core.LocalLockssRepositoryClient;
-import org.lockss.laaws.rs.core.LockssRepositoryClient;
+import org.lockss.laaws.rs.core.LocalLockssRepository;
+import org.lockss.laaws.rs.core.LockssRepository;
 import org.lockss.laaws.rs.model.Artifact;
 import org.lockss.laaws.rs.model.ArtifactIdentifier;
 import org.lockss.laaws.rs.model.ArtifactIndexData;
@@ -50,14 +50,14 @@ import java.util.UUID;
 
 import static org.junit.Assert.*;
 
-public class TestLocalLockssRepositoryClient {
-    private final static Log log = LogFactory.getLog(TestLocalLockssRepositoryClient.class);
+public class TestLocalLockssRepository {
+    private final static Log log = LogFactory.getLog(TestLocalLockssRepository.class);
     private static final byte[] TEST1_BYTES = "hi".getBytes();
-    private LockssRepositoryClient repo = null;
+    private LockssRepository repo = null;
 
     @Before
     public void setUp() throws Exception {
-        this.repo = new LocalLockssRepositoryClient();
+        this.repo = new LocalLockssRepository();
     }
 
     private Artifact createRandomArtifact(String collection, String auid) {

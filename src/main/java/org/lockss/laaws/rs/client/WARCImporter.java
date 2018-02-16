@@ -38,7 +38,7 @@ import org.archive.format.warc.WARCConstants;
 import org.archive.io.ArchiveRecord;
 import org.archive.io.ArchiveRecordHeader;
 import org.archive.io.warc.WARCReaderFactory;
-import org.lockss.laaws.rs.core.RestLockssRepositoryClient;
+import org.lockss.laaws.rs.core.RestLockssRepository;
 import org.lockss.laaws.rs.model.ArtifactIdentifier;
 import org.lockss.laaws.rs.util.ArtifactFactory;
 import org.lockss.laaws.rs.model.Artifact;
@@ -51,7 +51,7 @@ import java.util.List;
 
 public class WARCImporter {
     private static final Log log = LogFactory.getLog(WARCImporter.class);
-    private static RestLockssRepositoryClient repo;
+    private static RestLockssRepository repo;
 
     public static void importWARC(File warc, String collection, String auid) throws IOException, HttpException {
         List<String> artifactIds = new LinkedList<>();
@@ -130,7 +130,7 @@ public class WARCImporter {
         }
 
         // Create a handle to the LOCKSS repository service
-        repo = new RestLockssRepositoryClient(new URL(cmd.getOptionValue("repository")));
+        repo = new RestLockssRepository(new URL(cmd.getOptionValue("repository")));
 
         // Treat the remaining arguments as WARC file paths
         List<String> warcs = cmd.getArgList();

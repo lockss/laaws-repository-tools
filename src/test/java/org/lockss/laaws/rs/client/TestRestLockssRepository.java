@@ -37,7 +37,7 @@ import org.apache.http.message.BasicStatusLine;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.lockss.laaws.rs.core.RestLockssRepositoryClient;
+import org.lockss.laaws.rs.core.RestLockssRepository;
 import org.lockss.laaws.rs.model.Artifact;
 import org.lockss.laaws.rs.model.ArtifactIdentifier;
 import org.lockss.laaws.rs.util.ArtifactUtil;
@@ -57,17 +57,17 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 
 @RunWith(SpringRunner.class)
 //@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {"security.basic.enabled=false"})
-//@RestClientTest(RestLockssRepositoryClient.class)
+//@RestClientTest(RestLockssRepository.class)
 @WebMvcTest
 //@AutoConfigureMockMvc(secure = false)
-public class TestRestLockssRepositoryClient {
-    private final static Log log = LogFactory.getLog(TestRestLockssRepositoryClient.class);
+public class TestRestLockssRepository {
+    private final static Log log = LogFactory.getLog(TestRestLockssRepository.class);
     private final static byte[] TEST1_BYTES = "hello world".getBytes();
 
 //    @LocalServerPort
 //    private int port;
 
-    private RestLockssRepositoryClient repo;
+    private RestLockssRepository repo;
     private MockRestServiceServer server;
     private RestTemplate template;
 
@@ -76,7 +76,7 @@ public class TestRestLockssRepositoryClient {
         template = new RestTemplate();
 //        server = MockRestServiceServer.bindTo(template).build();
         server = MockRestServiceServer.createServer(template);
-        repo = new RestLockssRepositoryClient(new URL("http://localhost"), template);
+        repo = new RestLockssRepository(new URL("http://localhost"), template);
 
     }
 
