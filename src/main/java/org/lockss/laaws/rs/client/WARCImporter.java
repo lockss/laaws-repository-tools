@@ -40,8 +40,8 @@ import org.archive.io.ArchiveRecordHeader;
 import org.archive.io.warc.WARCReaderFactory;
 import org.lockss.laaws.rs.core.RestLockssRepository;
 import org.lockss.laaws.rs.model.ArtifactIdentifier;
-import org.lockss.laaws.rs.util.ArtifactFactory;
-import org.lockss.laaws.rs.model.Artifact;
+import org.lockss.laaws.rs.util.ArtifactDataFactory;
+import org.lockss.laaws.rs.model.ArtifactData;
 
 import java.io.*;
 import java.net.MalformedURLException;
@@ -68,8 +68,8 @@ public class WARCImporter {
                     record.getHeader()
             ));
 
-            // Convert ArchiveRecord to Artifact
-            Artifact artifact = ArtifactFactory.fromArchiveRecord(record);
+            // Convert ArchiveRecord to ArtifactData
+            ArtifactData artifact = ArtifactDataFactory.fromArchiveRecord(record);
 
             // Upload artifact
             if (artifact != null) {
@@ -109,7 +109,7 @@ public class WARCImporter {
         // Debugging
         for (String artifactId : artifactIds) {
             // Get HTTP status
-            //Artifact artifact = repo.getArtifact(collection, artifactId);
+            //ArtifactData artifact = repo.getArtifact(collection, artifactId);
             //log.debug(artifact.getHttpStatus());
         }
     }
