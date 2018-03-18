@@ -85,7 +85,7 @@ public class WARCImporter {
                 artifact.setIdentifier(identifier);
 
                 // Upload the artifact
-                String artifactId = repo.addArtifactData(artifact);
+                String artifactId = repo.addArtifact(artifact);
 
                 // Commit artifact immediately
                 repo.commitArtifact(collection, artifactId);
