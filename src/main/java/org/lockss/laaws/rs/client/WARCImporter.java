@@ -74,12 +74,19 @@ public class WARCImporter {
 
             // Upload artifact
             if (artifactData != null) {
+                Integer version = -1;
+                String versionHeader = headers.getVersion();
+
+                if ((versionHeader != null) && (!versionHeader.isEmpty())) {
+                    version = Integer.valueOf(versionHeader);
+                }
+
                 // Create an ArtifactIdentifier
                 ArtifactIdentifier identifier = new ArtifactIdentifier(
                         collection,
                         auid,
                         headers.getUrl(),
-                        headers.getVersion()
+                        version
                 );
 
                 // Set the artifact identifier
