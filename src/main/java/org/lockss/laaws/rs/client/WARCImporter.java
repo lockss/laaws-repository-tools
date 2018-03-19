@@ -38,9 +38,11 @@ import org.archive.format.warc.WARCConstants;
 import org.archive.io.ArchiveRecord;
 import org.archive.io.ArchiveRecordHeader;
 import org.archive.io.warc.WARCReaderFactory;
-import org.lockss.laaws.rs.model.ArtifactIdentifier;
-import org.lockss.laaws.rs.util.ArtifactFactory;
+import org.lockss.laaws.rs.core.RestLockssRepository;
 import org.lockss.laaws.rs.model.Artifact;
+import org.lockss.laaws.rs.model.ArtifactIdentifier;
+import org.lockss.laaws.rs.util.ArtifactDataFactory;
+import org.lockss.laaws.rs.model.ArtifactData;
 
 import java.io.*;
 import java.net.MalformedURLException;
@@ -50,7 +52,7 @@ import java.util.List;
 
 public class WARCImporter {
     private static final Log log = LogFactory.getLog(WARCImporter.class);
-    private static RestLockssRepositoryClient repo;
+    private static RestLockssRepository repo;
 
     public static void importWARC(File warc, String collection, String auid) throws IOException, HttpException {
         List<String> artifactIds = new LinkedList<>();
@@ -67,24 +69,32 @@ public class WARCImporter {
                     record.getHeader()
             ));
 
-            // Convert ArchiveRecord to Artifact
-            Artifact artifact = ArtifactFactory.fromArchiveRecord(record);
+            // Convert ArchiveRecord to ArtifactData
+            ArtifactData artifactData = ArtifactDataFactory.fromArchiveRecord(record);
 
             // Upload artifact
-            if (artifact != null) {
+            if (artifactData != null) {
+                Integer version = -1;
+                String versionHeader = headers.getVersion();
+
+                if ((versionHeader != null) && (!versionHeader.isEmpty())) {
+                    version = Integer.valueOf(versionHeader);
+                }
+
                 // Create an ArtifactIdentifier
                 ArtifactIdentifier identifier = new ArtifactIdentifier(
                         collection,
                         auid,
                         headers.getUrl(),
-                        headers.getVersion()
+                        version
                 );
 
                 // Set the artifact identifier
-                artifact.setIdentifier(identifier);
+                artifactData.setIdentifier(identifier);
 
                 // Upload the artifact
-                String artifactId = repo.addArtifact(artifact);
+                Artifact artifact = repo.addArtifact(artifactData);
+                String artifactId = artifact.getId();
 
                 // Commit artifact immediately
                 repo.commitArtifact(collection, artifactId);
@@ -108,7 +118,7 @@ public class WARCImporter {
         // Debugging
         for (String artifactId : artifactIds) {
             // Get HTTP status
-            //Artifact artifact = repo.getArtifact(collection, artifactId);
+            //ArtifactData artifact = repo.getArtifact(collection, artifactId);
             //log.debug(artifact.getHttpStatus());
         }
     }
@@ -129,7 +139,7 @@ public class WARCImporter {
         }
 
         // Create a handle to the LOCKSS repository service
-        repo = new RestLockssRepositoryClient(new URL(cmd.getOptionValue("repository")));
+        repo = new RestLockssRepository(new URL(cmd.getOptionValue("repository")));
 
         // Treat the remaining arguments as WARC file paths
         List<String> warcs = cmd.getArgList();
