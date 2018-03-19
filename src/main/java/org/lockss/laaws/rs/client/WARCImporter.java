@@ -39,6 +39,7 @@ import org.archive.io.ArchiveRecord;
 import org.archive.io.ArchiveRecordHeader;
 import org.archive.io.warc.WARCReaderFactory;
 import org.lockss.laaws.rs.core.RestLockssRepository;
+import org.lockss.laaws.rs.model.Artifact;
 import org.lockss.laaws.rs.model.ArtifactIdentifier;
 import org.lockss.laaws.rs.util.ArtifactDataFactory;
 import org.lockss.laaws.rs.model.ArtifactData;
@@ -69,23 +70,31 @@ public class WARCImporter {
             ));
 
             // Convert ArchiveRecord to ArtifactData
-            ArtifactData artifact = ArtifactDataFactory.fromArchiveRecord(record);
+            ArtifactData artifactData = ArtifactDataFactory.fromArchiveRecord(record);
 
             // Upload artifact
-            if (artifact != null) {
+            if (artifactData != null) {
+                Integer version = -1;
+                String versionHeader = headers.getVersion();
+
+                if ((versionHeader != null) && (!versionHeader.isEmpty())) {
+                    version = Integer.valueOf(versionHeader);
+                }
+
                 // Create an ArtifactIdentifier
                 ArtifactIdentifier identifier = new ArtifactIdentifier(
                         collection,
                         auid,
                         headers.getUrl(),
-                        headers.getVersion()
+                        version
                 );
 
                 // Set the artifact identifier
-                artifact.setIdentifier(identifier);
+                artifactData.setIdentifier(identifier);
 
                 // Upload the artifact
-                String artifactId = repo.addArtifact(artifact);
+                Artifact artifact = repo.addArtifact(artifactData);
+                String artifactId = artifact.getId();
 
                 // Commit artifact immediately
                 repo.commitArtifact(collection, artifactId);
