@@ -95,7 +95,6 @@ public class WARCImporter {
                 // Upload the artifact
                 Artifact artifact = repo.addArtifact(artifactData);
                 String artifactId = artifact.getId();
-                log.info(String.format("PANTHER %s", artifact.getContentLength()));
 
                 // Commit artifact immediately
                 repo.commitArtifact(collection, artifactId);
