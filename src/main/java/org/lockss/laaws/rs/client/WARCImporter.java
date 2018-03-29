@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, Board of Trustees of Leland Stanford Jr. University,
+ * Copyright (c) 2017-2018, Board of Trustees of Leland Stanford Jr. University,
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification,
@@ -38,12 +38,13 @@ import org.archive.format.warc.WARCConstants;
 import org.archive.io.ArchiveRecord;
 import org.archive.io.ArchiveRecordHeader;
 import org.archive.io.warc.WARCReaderFactory;
+import org.lockss.laaws.rs.core.LocalLockssRepository;
+import org.lockss.laaws.rs.core.LockssRepository;
 import org.lockss.laaws.rs.core.RestLockssRepository;
 import org.lockss.laaws.rs.model.Artifact;
 import org.lockss.laaws.rs.model.ArtifactIdentifier;
 import org.lockss.laaws.rs.util.ArtifactDataFactory;
 import org.lockss.laaws.rs.model.ArtifactData;
-
 import java.io.*;
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -52,7 +53,7 @@ import java.util.List;
 
 public class WARCImporter {
     private static final Log log = LogFactory.getLog(WARCImporter.class);
-    private static RestLockssRepository repo;
+    private static LockssRepository repo;
 
     public static void importWARC(File warc, String collection, String auid) throws IOException, HttpException {
         List<String> artifactIds = new LinkedList<>();
@@ -128,7 +129,9 @@ public class WARCImporter {
 
         // Setup command line options
         Options options = new Options();
-        options.addOption("r", "repository", true, "Target repository URL");
+        options.addOption("l", "localRepository",
+            true, "Target local repository URL");
+        options.addOption("r", "restRepository", true, "Target repository URL");
         options.addOption("c", "collection", true, "Target collection ID");
         options.addOption("a", "auid", true, "Archival Unit ID (AUID)");
 
@@ -138,8 +141,21 @@ public class WARCImporter {
             log.info("Forcing AUID of WARC records to: " + cmd.getOptionValue("auid"));
         }
 
-        // Create a handle to the LOCKSS repository service
-        repo = new RestLockssRepository(new URL(cmd.getOptionValue("repository")));
+        if (cmd.hasOption("restRepository")) {
+          String restServiceLocation = cmd.getOptionValue("restRepository");
+          log.info("Using the REST Service at: " + restServiceLocation);
+          // Create a handle to the LOCKSS REST repository service
+          repo = new RestLockssRepository(new URL(restServiceLocation));
+        } else if (cmd.hasOption("localRepository")) {
+          String localRepoLocation = cmd.getOptionValue("localRepository");
+          log.info("Using the local directory: " + localRepoLocation);
+          // Create a handle to the local LOCKSS repository.
+          repo = new LocalLockssRepository(new File(localRepoLocation));
+        } else {
+          log.error("No repository data found:"
+              + " Either a -l or a -r option must be specified");
+          System.exit(1);
+        }
 
         // Treat the remaining arguments as WARC file paths
         List<String> warcs = cmd.getArgList();
