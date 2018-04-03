@@ -108,7 +108,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
     <dependency>
       <groupId>org.lockss.laaws</groupId>
       <artifactId>laaws-repository-core</artifactId>
-      <version>1.11.3</version>
+      <version>1.11.4</version>
+      <!-- tests don't currently exercise Spring; add exclusion of servlet-api when necessary -->
     </dependency>
 
   </dependencies>
