@@ -30,31 +30,13 @@
 
 package org.lockss.laaws.rs.client;
 
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-
-import static org.junit.Assert.*;
+import org.junit.jupiter.api.Test;
 
 public class TestWARCImporter {
-    @Before
-    public void setUp() throws Exception {
-    }
 
-    @After
-    public void tearDown() throws Exception {
-    }
-
-    @Test
-    public void importWARC() throws Exception {
-    }
-
-    @Test
-    public void postWARCRecord() throws Exception {
-    }
-
-    @Test
-    public void buildRepoEndpoint() throws Exception {
-    }
-
+  @Test
+  public void testFixme() {
+    
+  }
+  
 }
