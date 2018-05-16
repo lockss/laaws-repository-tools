@@ -150,7 +150,7 @@ public class WARCImporter {
           String localRepoLocation = cmd.getOptionValue("localRepository");
           log.info("Using the local directory: " + localRepoLocation);
           // Create a handle to the local LOCKSS repository.
-          repo = new LocalLockssRepository(new File(localRepoLocation), "localindex.ser");
+          repo = new LocalLockssRepository(new File(localRepoLocation), "artifact-index.ser");
         } else {
           log.error("No repository data found:"
               + " Either a -l or a -r option must be specified");
