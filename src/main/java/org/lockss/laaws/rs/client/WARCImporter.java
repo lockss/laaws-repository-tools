@@ -125,7 +125,7 @@ public class WARCImporter {
     }
 
 
-    public static void main(String[] args) throws ParseException, MalformedURLException {
+    public static void main(String[] args) throws ParseException, MalformedURLException, IOException {
 
         // Setup command line options
         Options options = new Options();
@@ -150,7 +150,7 @@ public class WARCImporter {
           String localRepoLocation = cmd.getOptionValue("localRepository");
           log.info("Using the local directory: " + localRepoLocation);
           // Create a handle to the local LOCKSS repository.
-          repo = new LocalLockssRepository(new File(localRepoLocation));
+          repo = new LocalLockssRepository(new File(localRepoLocation), "localindex.ser");
         } else {
           log.error("No repository data found:"
               + " Either a -l or a -r option must be specified");
