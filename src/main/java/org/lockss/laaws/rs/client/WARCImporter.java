@@ -61,7 +61,27 @@ public class WARCImporter {
   private String auid;
 
   /**
-   * Constructor when using a local repository.
+   * Constructor when using an existing repository.
+   * 
+   * @param repository
+   *          A LockssRepository with the existing repository where to import
+   *          the WARC file.
+   * @param collection
+   *          A String with the name of the collection where to import the WARC
+   *          file.
+   * @param auid
+   *          A String with the Archival Unit identifier linked to the imported
+   *          WARC file.
+   */
+  public WARCImporter(LockssRepository repository, String collection,
+      String auid) {
+    this.repository = repository;
+    this.collection = collection;
+    this.auid = auid;
+  }
+
+  /**
+   * Constructor when using a new local repository.
    * 
    * @param repoDir
    *          A File with the directory of the local repository to be used.
@@ -79,13 +99,12 @@ public class WARCImporter {
    */
   public WARCImporter(File repoDir, String persistedIndexName,
       String collection, String auid) throws IOException {
-    repository = new LocalLockssRepository(repoDir, persistedIndexName);
-    this.collection = collection;
-    this.auid = auid;
+    this(new LocalLockssRepository(repoDir, persistedIndexName), collection,
+	auid);
   }
 
   /**
-   * Constructor when using a REST service repository.
+   * Constructor when using a new REST service repository.
    * 
    * @param url
    *          A URL with the location of the repository REST service to be used.
@@ -97,9 +116,7 @@ public class WARCImporter {
    *          WARC file.
    */
   public WARCImporter(URL url, String collection, String auid) {
-    repository = new RestLockssRepository(url);
-    this.collection = collection;
-    this.auid = auid;
+    this(new RestLockssRepository(url), collection, auid);
   }
 
   /**
@@ -138,7 +155,7 @@ public class WARCImporter {
 
     // Get the specified collection where to import the WARC file.
     String collection = cmd.getOptionValue("collection");
-    log.trace("collection: {}", () -> collection);
+    log.trace("collection: " + collection);
 
     WARCImporter warcImporter = null;
 
@@ -146,7 +163,7 @@ public class WARCImporter {
     if (cmd.hasOption("restRepository")) {
       // Yes: Get the REST service repository URL specification.
       String restServiceUrlSpec = cmd.getOptionValue("restRepository");
-      log.trace("Using the REST Service at: {}", () -> restServiceUrlSpec);
+      log.trace("Using the REST Service at: " + restServiceUrlSpec);
 
       // Create the WARC file importer.
       warcImporter =
@@ -155,7 +172,7 @@ public class WARCImporter {
     } else if (cmd.hasOption("localRepository")) {
       // Yes: Get the local repository directory.
       String localRepoDir = cmd.getOptionValue("localRepository");
-      log.trace("Using the local directory: {}", () -> localRepoDir);
+      log.trace("Using the local directory: " + localRepoDir);
 
       // Create the WARC file importer.
       warcImporter = new WARCImporter(new File(localRepoDir),
@@ -173,7 +190,7 @@ public class WARCImporter {
 
     // Iterate over WARCs and import
     for (String warc : warcs) {
-      log.trace("warc: {}", () -> warc);
+      log.trace("warc: " + warc);
 
       try {
 	warcImporter.importWARC(new File(warc));
@@ -193,10 +210,10 @@ public class WARCImporter {
    * @throws IOException
    *           if there are problems importing the WARC file.
    */
-  LockssRepository importWARC(File warc) throws IOException {
+  public LockssRepository importWARC(File warc) throws IOException {
     log.debug2("warc: {}", () -> warc);
-    log.debug2("collection: {}", () -> collection);
-    log.debug2("auid: {}", () -> auid);
+    log.debug2("collection: " + collection);
+    log.debug2("auid: " + auid);
 
     int processedCount = 0;
     int importedCount = 0;
@@ -223,7 +240,7 @@ public class WARCImporter {
       if (artifactData != null) {
 	Integer version = -1;
 	String versionHeader = headers.getVersion();
-	log.trace("versionHeader: {}", () -> versionHeader);
+	log.trace("versionHeader: " + versionHeader);
 
 	if ((versionHeader != null) && (!versionHeader.isEmpty())) {
 	  version = Integer.valueOf(versionHeader);
@@ -252,7 +269,7 @@ public class WARCImporter {
 
 	// Commit artifact immediately
 	repository.commitArtifact(collection, artifactId);
-	log.info("Committed artifactId: {}", () -> artifactId);
+	log.info("Committed artifactId: " + artifactId);
 
 	importedCount++;
       } else {

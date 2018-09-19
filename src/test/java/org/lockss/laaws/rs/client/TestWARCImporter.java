@@ -36,11 +36,11 @@ import static org.archive.format.warc.WARCConstants.HEADER_KEY_IP;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.Reader;
 import java.net.URI;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.http.ProtocolVersion;
 import org.apache.http.message.BasicStatusLine;
@@ -58,23 +58,14 @@ import org.junit.jupiter.api.Test;
 import org.lockss.laaws.rs.core.AbstractLockssRepositoryTest.ArtSpec;
 import org.lockss.laaws.rs.core.LockssRepository;
 import org.lockss.laaws.rs.model.Artifact;
-import org.lockss.laaws.rs.model.ArtifactData;
-import org.lockss.laaws.rs.model.ArtifactIdentifier;
 import org.lockss.log.L4JLogger;
 import org.lockss.util.test.LockssTestCase5;
-import org.springframework.http.HttpHeaders;
 
 /**
  * Test class for org.lockss.laaws.rs.client.WARCImporter.
  */
 public class TestWARCImporter extends LockssTestCase5 {
   private static final L4JLogger log = L4JLogger.getLogger();
-  private static final String CONTENT_DATE = "Mon, 28 Dec 1988 03:36:21 GMT";
-  private static final String CONTENT_TYPE = "text/html";
-  private static final String STORAGE_URL_SUFFIX =
-      "/au-116cf2bbfdcfbe0c9ad94987b00101cd/artifacts.warc?offset=0";
-  private final static String CONTENT_DIGEST = "SHA-256:"
-      + "83059a48eec14d51f4d10d93e4a5e3b70f05562fe0896616813c659b8f36eab8";
 
   @Test
   public void test() throws Exception {
@@ -98,11 +89,21 @@ public class TestWARCImporter extends LockssTestCase5 {
     artSpec.setContent(body);
     artSpec.setContentLength(body.length());
 
+    Map<String, String> headers = new HashMap<>();
+    headers.put("Date", "Mon, 28 Dec 1988 03:36:21 GMT");
+    headers.put("Content-Length", String.valueOf(artSpec.getContentLength()));
+    headers.put("Content-Type", "text/html");
+
+    artSpec.setHeaders(headers);
+
     // The directory where the generated test WARC file is created.
     File warcDir = getTempDir();
 
     String storageUrl = "file://" + warcDir.getAbsolutePath()
-    + "/collections/" + artSpec.getCollection() + STORAGE_URL_SUFFIX;
+    + "/collections/" + artSpec.getCollection()
+    + "/au-116cf2bbfdcfbe0c9ad94987b00101cd/artifacts.warc?offset=0";
+
+    artSpec.setStorageUrl(storageUrl);
 
     // Generate the test WARC file.
     File warc1 = generateWarcFile("generatedWarc1", warcDir, artSpec);
@@ -139,35 +140,8 @@ public class TestWARCImporter extends LockssTestCase5 {
 	  // Verify the artifact contents.
 	  assertEquals(collection, artifact.getCollection());
 	  assertEquals(auId, artifact.getAuid());
-	  assertEquals(artSpec.getUrl(), artifact.getUri());
-	  assertEquals(artSpec.getVersion(), artifact.getVersion().intValue());
 	  assertTrue(artifact.getCommitted());
-	  assertEquals(storageUrl, artifact.getStorageUrl());
-	  assertEquals(artSpec.getContentLength(), artifact.getContentLength());
-	  assertEquals(CONTENT_DIGEST, artifact.getContentDigest());
-
-	  ArtifactData artifactData = repository.getArtifactData(artifact);
-	  ArtifactIdentifier identifier = artifactData.getIdentifier();
-	  assertEquals(collection, identifier.getCollection());
-	  assertEquals(auId, identifier.getAuid());
-	  assertEquals(artSpec.getUrl(), identifier.getUri());
-	  assertEquals(artSpec.getVersion(),
-	      identifier.getVersion().intValue());
-
-	  HttpHeaders metadata = artifactData.getMetadata();
-	  assertEquals(CONTENT_DATE, metadata.getFirst("Date"));
-	  assertEquals(artSpec.getContentLength(), metadata.getContentLength());
-	  assertEquals(CONTENT_TYPE, metadata.getContentType().toString());
-
-	  assertEquals(artSpec.getContent(),
-	      fromReader(new InputStreamReader(artifactData.getInputStream())));
-
-	  assertEquals(artSpec.getStatusLine().toString(),
-	      artifactData.getHttpStatus().toString());
-	  assertEquals(storageUrl, artifactData.getStorageUrl());
-	  assertEquals(CONTENT_DIGEST, artifactData.getContentDigest());
-	  assertEquals(artSpec.getContentLength(),
-	      artifactData.getContentLength());
+	  artSpec.assertData(repository, artifact);
 	}
       }
     }
@@ -204,8 +178,9 @@ public class TestWARCImporter extends LockssTestCase5 {
     WARCWriter writer = new WARCWriter(new AtomicInteger(), settings);
 
     try {
-      //writeWarcinfoRecord(settings, writer);
-      //writeMetadataRecords(writer);
+      writeWarcinfoRecord(settings, writer);
+      writeMetadataRecords(writer);
+      writeRequestRecord(writer);
       writeResponseRecord(writer, artSpec);
     } finally {
       writer.close();
@@ -290,6 +265,47 @@ public class TestWARCImporter extends LockssTestCase5 {
   }
 
   /**
+   * Writes a request record to a WARC file.
+   * 
+   * @param writer
+   *          A WARCWriter used to write content to the WARC file.
+   * @throws IOException
+   *           if there are problems writing the WARC file.
+   */
+  private void writeRequestRecord(final WARCWriter writer)
+      throws IOException {
+    if (log.isDebugEnabled()) log.debug("Invoked");
+
+    WARCRecordInfo recordInfo = new WARCRecordInfo();
+    recordInfo.setType(WARCRecordType.request);
+    recordInfo.setUrl("http://www.laaws.lockss.org/robots.txt");
+    recordInfo.setCreate14DigitDate(ArchiveUtils.get14DigitDate());
+    recordInfo.setMimetype(WARCConstants.HTTP_REQUEST_MIMETYPE);
+    recordInfo.setEnforceLength(true);
+
+    ANVLRecord headers = new ANVLRecord();
+    headers.addLabelValue(HEADER_KEY_IP, "192.168.1.1");
+    recordInfo.setExtraHeaders(headers);
+
+    URI rid = (new UUIDGenerator()).getQualifiedRecordID("type",
+	WARCRecordType.request.toString());
+    recordInfo.setRecordId(rid);
+
+    String content = "GET /robots.txt HTTP/1.1\n"
+	+ "User-Agent: Wget/1.14 (linux-gnu)\n"
+	+ "Accept: */*\n"
+	+ "Host: www.laaws.lockss.org\n"
+	+ "Connection: Keep-Alive\n";
+
+    byte [] contentbytes = content.getBytes(UTF8Bytes.UTF8);
+    recordInfo.setContentStream(new ByteArrayInputStream(contentbytes));
+    recordInfo.setContentLength((long)contentbytes.length);
+    writer.writeRecord(recordInfo);
+
+    if (log.isDebugEnabled()) log.debug("Done");
+  }
+
+  /**
    * Writes a response record to a WARC file.
    * 
    * @param writer
@@ -320,10 +336,7 @@ public class TestWARCImporter extends LockssTestCase5 {
     recordInfo.setRecordId(rid);
 
     String content = artSpec.getStatusLine() + "\n"
-	+ "Date: " + CONTENT_DATE + "\n"
-	+ "Content-Length: " + artSpec.getContentLength() + "\n"
-	+ "Content-Type: " + CONTENT_TYPE + "\n"
-	+ "\n"
+	+ artSpec.getHeadersAsText() + "\n"
 	+ artSpec.getContent();
 
     byte [] contentbytes = content.getBytes(UTF8Bytes.UTF8);
@@ -332,67 +345,5 @@ public class TestWARCImporter extends LockssTestCase5 {
     writer.writeRecord(recordInfo);
 
     if (log.isDebugEnabled()) log.debug("Done");
-  }
-
-  /**
-   * Provides a text string obtained from a reader.
-   * 
-   * @param r
-   *          A Reader with the reader.
-   * @return a String with the text string.
-   * @throws IOException
-   *           if there are problems reading from the reader.
-   */
-  private String fromReader(Reader r) throws IOException {
-    r = getLineReader(r);
-    char[] buf = new char[1000];
-    StringBuilder sb = new StringBuilder(1000);
-    int len;
-    while ((len = r.read(buf)) >= 0) {
-      sb.append(buf, 0, len);
-    }
-    return sb.toString();
-  }
-
-  /**
-   * Return a reader that transforms platform newline sequences to standard
-   * newline characters.
-   * 
-   * @param r
-   *          A Reader with the original reader.
-   * @return a filtered reader that transforms platform newline sequences to
-   *         standard newline characters.
-   */
-  private Reader getLineReader(final Reader r) {
-    return new Reader() {
-      boolean saw_CR = false;
-      final char[] cb = new char[1];
-      public int read(char cbuf[], int off, int len) throws IOException {
-	int i;
-	int n = 0;
-	for (i = 0; i < len; i++) {
-	  if ((n = r.read(cb, 0, 1)) <= 0) {
-	    break;
-	  }
-	  if (saw_CR) {
-	    saw_CR = false;
-	    if (cb[0] == '\n') {
-	      if (r.read(cb, 0, 1) <= 0) {
-		break;
-	      }
-	    }
-	  }
-	  if (cb[0] == '\r') {
-	    saw_CR = true;
-	    cb[0] = '\n';
-	  }
-	  cbuf[off+i] = cb[0];
-	}
-	return (i == 0) ? n : i;
-      }
-      public void close() throws IOException {
-	r.close();
-      }
-    };
   }
 }
