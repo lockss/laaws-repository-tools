@@ -149,13 +149,12 @@ public class WARCImporter {
 
     if (cmd.hasOption("auid")) {
       auid = cmd.getOptionValue("auid");
-      if (log.isTraceEnabled())
-	log.trace("Forcing AUID of WARC records to: " + auid);
+      log.trace("Forcing AUID of WARC records to: {}", auid);
     }
 
     // Get the specified collection where to import the WARC file.
     String collection = cmd.getOptionValue("collection");
-    log.trace("collection: " + collection);
+    log.trace("collection: {}", collection);
 
     WARCImporter warcImporter = null;
 
@@ -163,7 +162,7 @@ public class WARCImporter {
     if (cmd.hasOption("restRepository")) {
       // Yes: Get the REST service repository URL specification.
       String restServiceUrlSpec = cmd.getOptionValue("restRepository");
-      log.trace("Using the REST Service at: " + restServiceUrlSpec);
+      log.trace("Using the REST Service at: {}", restServiceUrlSpec);
 
       // Create the WARC file importer.
       warcImporter =
@@ -172,7 +171,7 @@ public class WARCImporter {
     } else if (cmd.hasOption("localRepository")) {
       // Yes: Get the local repository directory.
       String localRepoDir = cmd.getOptionValue("localRepository");
-      log.trace("Using the local directory: " + localRepoDir);
+      log.trace("Using the local directory: {}", localRepoDir);
 
       // Create the WARC file importer.
       warcImporter = new WARCImporter(new File(localRepoDir),
@@ -190,7 +189,7 @@ public class WARCImporter {
 
     // Iterate over WARCs and import
     for (String warc : warcs) {
-      log.trace("warc: " + warc);
+      log.trace("warc: {}", warc);
 
       try {
 	warcImporter.importWARC(new File(warc));
@@ -212,8 +211,8 @@ public class WARCImporter {
    */
   public LockssRepository importWARC(File warc) throws IOException {
     log.debug2("warc: {}", () -> warc);
-    log.debug2("collection: " + collection);
-    log.debug2("auid: " + auid);
+    log.debug2("collection: {}", collection);
+    log.debug2("auid: {}", auid);
 
     int processedCount = 0;
     int importedCount = 0;
@@ -240,13 +239,13 @@ public class WARCImporter {
       if (artifactData != null) {
 	Integer version = -1;
 	String versionHeader = headers.getVersion();
-	log.trace("versionHeader: " + versionHeader);
+	log.trace("versionHeader: {}", versionHeader);
 
 	if ((versionHeader != null) && (!versionHeader.isEmpty())) {
 	  version = Integer.valueOf(versionHeader);
 	}
 
-	log.trace("version: " + version);
+	log.trace("version: {}", version);
 
 	// Create an ArtifactIdentifier
 	ArtifactIdentifier identifier = new ArtifactIdentifier(
@@ -269,7 +268,7 @@ public class WARCImporter {
 
 	// Commit artifact immediately
 	repository.commitArtifact(collection, artifactId);
-	log.info("Committed artifactId: " + artifactId);
+	log.info("Committed artifactId: {}", artifactId);
 
 	importedCount++;
       } else {
@@ -280,9 +279,9 @@ public class WARCImporter {
       processedCount++;
     }
 
-    log.info("WARC File " + warc + " processing completed: " + processedCount
-	+ " processed, " + importedCount + " imported, " + ignoredCount
-	+ " ignored.");
+    log.info(String.format("WARC File %s processing completed: %d processed, "
+	+ "%d imported, %d ignored.", warc, processedCount, importedCount,
+	ignoredCount));
 
     return repository;
   }

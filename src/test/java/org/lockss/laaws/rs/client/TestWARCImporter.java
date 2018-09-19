@@ -99,12 +99,6 @@ public class TestWARCImporter extends LockssTestCase5 {
     // The directory where the generated test WARC file is created.
     File warcDir = getTempDir();
 
-    String storageUrl = "file://" + warcDir.getAbsolutePath()
-    + "/collections/" + artSpec.getCollection()
-    + "/au-116cf2bbfdcfbe0c9ad94987b00101cd/artifacts.warc?offset=0";
-
-    artSpec.setStorageUrl(storageUrl);
-
     // Generate the test WARC file.
     File warc1 = generateWarcFile("generatedWarc1", warcDir, artSpec);
 
