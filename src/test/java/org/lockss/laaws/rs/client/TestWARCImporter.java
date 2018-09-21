@@ -90,7 +90,7 @@ public class TestWARCImporter extends LockssTestCase5 {
     artSpec.setContentLength(body.length());
 
     Map<String, String> headers = new HashMap<>();
-    headers.put("Date", "Mon, 28 Dec 1988 03:36:21 GMT");
+    headers.put("Date", "Wed, 28 Dec 1988 03:36:21 GMT");
     headers.put("Content-Length", String.valueOf(artSpec.getContentLength()));
     headers.put("Content-Type", "text/html");
 
