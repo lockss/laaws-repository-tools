@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2017-2018 Board of Trustees of Leland Stanford Jr. University,
+Copyright (c) 2017-2019 Board of Trustees of Leland Stanford Jr. University,
 all rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -99,8 +99,8 @@ public class WARCImporter {
    */
   public WARCImporter(File repoDir, String persistedIndexName,
       String collection, String auid) throws IOException {
-    this(new LocalLockssRepository(repoDir, persistedIndexName), collection,
-	auid);
+    this(LocalLockssRepository.getInstance(repoDir, persistedIndexName),
+	collection, auid);
   }
 
   /**
