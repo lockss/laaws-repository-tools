@@ -99,8 +99,8 @@ public class WARCImporter {
    */
   public WARCImporter(File repoDir, String persistedIndexName,
       String collection, String auid) throws IOException {
-    this(LocalLockssRepository.getInstance(repoDir, persistedIndexName),
-	collection, auid);
+    this(new LocalLockssRepository(repoDir, persistedIndexName), collection,
+	auid);
   }
 
   /**
