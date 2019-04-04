@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2017-2018 Board of Trustees of Leland Stanford Jr. University,
+Copyright (c) 2017-2019 Board of Trustees of Leland Stanford Jr. University,
 all rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -127,7 +127,7 @@ public class TestWARCImporter extends LockssTestCase5 {
 	// Loop through all the Artifacts linked to this Archival Unit and
 	// collection pair.
 	for (Artifact artifact
-	    : repository.getAllArtifactsAllVersions(collection, auId)) {
+	    : repository.getArtifactsAllVersions(collection, auId)) {
 	  // Verify the single Artifact.
 	  assertEquals(1, ++count);
 
