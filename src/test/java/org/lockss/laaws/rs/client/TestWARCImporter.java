@@ -55,9 +55,9 @@ import org.archive.uid.UUIDGenerator;
 import org.archive.util.ArchiveUtils;
 import org.archive.util.anvl.ANVLRecord;
 import org.junit.jupiter.api.Test;
-import org.lockss.laaws.rs.core.AbstractLockssRepositoryTest.ArtSpec;
 import org.lockss.laaws.rs.core.LockssRepository;
 import org.lockss.laaws.rs.model.Artifact;
+import org.lockss.laaws.rs.model.ArtifactSpec;
 import org.lockss.log.L4JLogger;
 import org.lockss.util.test.LockssTestCase5;
 
@@ -70,7 +70,7 @@ public class TestWARCImporter extends LockssTestCase5 {
   @Test
   public void test() throws Exception {
     // Expectations of the artifact created.
-    ArtSpec artSpec = ArtSpec.forCollAuUrlVer("collection1", "auid1",
+    ArtifactSpec artSpec = ArtifactSpec.forCollAuUrlVer("collection1", "auid1",
 	"http://some.server.org/", 1);
 
     artSpec.setStatusLine(new BasicStatusLine(new ProtocolVersion("HTTP", 1,1),
@@ -135,7 +135,7 @@ public class TestWARCImporter extends LockssTestCase5 {
 	  assertEquals(collection, artifact.getCollection());
 	  assertEquals(auId, artifact.getAuid());
 	  assertTrue(artifact.getCommitted());
-	  artSpec.assertData(repository, artifact);
+	  artSpec.assertArtifact(repository, artifact);
 	}
       }
     }
@@ -149,13 +149,13 @@ public class TestWARCImporter extends LockssTestCase5 {
    * @param warcDir
    *          A File with the directory where to create the WARC file.
    * @param artSpec
-   *          An ArtSpec with all the information needed to create and store an
+   *          An ArtifactSpec with all the information needed to create and store an
    *          Artifact.
    * @return a File with the specification of the generated WARC file.
    * @throws IOException
    *           if there are problems creating the WARC file.
    */
-  private File generateWarcFile(String filename, File warcDir, ArtSpec artSpec)
+  private File generateWarcFile(String filename, File warcDir, ArtifactSpec artSpec)
       throws IOException {
     log.debug2("filename = " + filename);
     log.debug2("warcDir = " + warcDir);
@@ -305,12 +305,12 @@ public class TestWARCImporter extends LockssTestCase5 {
    * @param writer
    *          A WARCWriter used to write content to the WARC file.
    * @param artSpec
-   *          An ArtSpec with all the information needed to create and store an
+   *          An ArtifactSpec with all the information needed to create and store an
    *          Artifact.
    * @throws IOException
    *           if there are problems writing the WARC file.
    */
-  private void writeResponseRecord(final WARCWriter writer, ArtSpec artSpec)
+  private void writeResponseRecord(final WARCWriter writer, ArtifactSpec artSpec)
       throws IOException {
     if (log.isDebugEnabled()) log.debug("Invoked");
 
