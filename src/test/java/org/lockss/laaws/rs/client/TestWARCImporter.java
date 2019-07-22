@@ -90,7 +90,11 @@ public class TestWARCImporter extends LockssTestCase5 {
     artSpec.setContentLength(body.length());
 
     Map<String, String> headers = new HashMap<>();
+
+    // Set collection date
     headers.put("Date", "Wed, 28 Dec 1988 03:36:21 GMT");
+    artSpec.setCollectionDate(599283381000L);
+
     headers.put("Content-Length", String.valueOf(artSpec.getContentLength()));
     headers.put("Content-Type", "text/html");
 
@@ -106,6 +110,9 @@ public class TestWARCImporter extends LockssTestCase5 {
     WARCImporter warcImporter = new WARCImporter(warcDir, "artifact-index.ser",
 	artSpec.getCollection(), artSpec.getAuid());
     warcImporter.importWARC(warc1);
+
+    // Importing WARCs always commits resulting artifacts so mark the ArtifactSpec as committed
+    artSpec.setCommitted(true);
 
     // Get the repository used by the WARC import process.
     LockssRepository repository = warcImporter.getRepository();
