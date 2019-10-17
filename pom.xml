@@ -111,18 +111,39 @@ POSSIBILITY OF SUCH DAMAGE.
       <version>1.2.0</version>
       <scope>test</scope>
     </dependency>
+
+    <!-- Needed for MiniSolrCloudCluster in testing -->
+    <dependency>
+      <groupId>org.apache.solr</groupId>
+      <artifactId>solr-test-framework</artifactId>
+      <version>${version.group.solr}</version>
+      <scope>test</scope>
+    </dependency>
+
   </dependencies>
 
   <build>
     <plugins>
-      <plugin><!-- FIXME -->
+      <plugin>
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>exec-maven-plugin</artifactId>
-        <version>1.6.0</version>
-        <configuration>
-          <mainClass>${run.mainClass}</mainClass>
-          <arguments>${run.args}</arguments>
-        </configuration>
+        <version>${version.plugin.exec-maven-plugin}</version>
+
+        <executions>
+          <execution>
+            <id>generateConfigSetFileLists</id>
+            <phase>generate-resources</phase>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+            <configuration>
+              <!-- Working directory set to base directory of LOCKSS config sets -->
+              <workingDirectory>${project.basedir}/src/main/resources/solr/configsets/lockss</workingDirectory>
+              <executable>${project.basedir}/scripts/genConfigSetFilelists.sh</executable>
+            </configuration>
+          </execution>
+        </executions>
+
       </plugin>
     </plugins>
   </build>

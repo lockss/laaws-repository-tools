@@ -45,7 +45,7 @@
     that avoids logging every request
 -->
 
-<schema name="lockss-artifact-index-schema" version="1">
+<schema name="example-data-driven-schema" version="1.6">
     <!-- attribute "name" is the name of this schema and is only used for display purposes.
        version="x.y" is Solr's version number for the schema syntax and 
        semantics.  It should not normally be changed by applications.
@@ -129,8 +129,7 @@
     <field name="committed" type="boolean" multiValued="false" indexed="true" required="true" stored="true"/>
     <field name="contentDigest" type="string" multiValued="false" indexed="true" required="true" stored="true"/>
     <field name="contentLength" type="plong" multiValued="false" indexed="true" required="true" stored="true"/>
-    <field name="id" type="string" multiValued="false" indexed="true" required="true" stored="true"/>
-    <field name="solrSchemaLockssVersion" type="pint" default="2" multiValued="false" indexed="true" required="false" stored="true"/>
+    <field name="solrSchemaLockssVersion" type="pint" default="1" multiValued="false" indexed="true" required="false" stored="true"/>
     <field name="storageUrl" type="string" multiValued="false" indexed="true" required="true" stored="true"/>
     <field name="uri" type="string" multiValued="false" indexed="true" required="true" stored="true"/>
     <field name="version" type="pint" multiValued="false" indexed="true" required="true" stored="true"/>
