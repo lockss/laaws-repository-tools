@@ -142,6 +142,19 @@ POSSIBILITY OF SUCH DAMAGE.
               <executable>${project.basedir}/scripts/genConfigSetFilelists.sh</executable>
             </configuration>
           </execution>
+
+          <execution>
+            <id>generatePrebakedSolrHomeFilelist</id>
+            <phase>generate-test-resources</phase>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+            <configuration>
+              <!-- Working directory set to base directory of LOCKSS config sets -->
+              <workingDirectory>${project.basedir}/src/test/resources/solr</workingDirectory>
+              <executable>${project.basedir}/scripts/generateFilelist.sh</executable>
+            </configuration>
+          </execution>
         </executions>
 
       </plugin>

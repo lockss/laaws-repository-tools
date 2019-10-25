@@ -79,7 +79,7 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
 
   // JUNIT /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-  private static final String PACKAGED_SOLRHOME_FILELIST = "/solr.filelist.txt";
+  private static final String PACKAGED_SOLRHOME_FILELIST = "/solr/filelist.txt";
 
   @BeforeEach
   public void copyResourcesForTests() throws IOException {
