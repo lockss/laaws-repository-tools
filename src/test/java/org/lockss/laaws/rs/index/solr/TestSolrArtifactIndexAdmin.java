@@ -79,6 +79,8 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
 
   // JUNIT /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+  private static final String PACKAGED_SOLRHOME_FILELIST = "/solr.filelist.txt";
+
   @BeforeEach
   public void copyResourcesForTests() throws IOException {
     // Create a temporary directory to hold a copy of the test Solr environment
@@ -86,10 +88,29 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
     tmpDir.deleteOnExit();
     solrHomePath = tmpDir.toPath();
 
-    // Copy contents from the master copy into temporary directory created above
-    FileUtils.copyDirectory(MASTER_SOLR_HOME_PATH.toFile(), tmpDir);
-
     log.trace("solrHomePath = {}", solrHomePath);
+
+    // Read file list
+    try (InputStream input = getClass().getResourceAsStream(PACKAGED_SOLRHOME_FILELIST)) {
+      try (BufferedReader reader = new BufferedReader(new InputStreamReader(input))) {
+
+        // Name of resource to load
+        String resourceName;
+
+        // Iterate over resource names from the list and copy each into the target directory
+        while ((resourceName = reader.readLine()) != null) {
+          // Source resource URL
+          URL srcUrl = getClass().getResource(String.format("/solr/%s", resourceName));
+
+          // Destination file
+          File dstFile = solrHomePath.resolve(resourceName).toFile();
+
+          // Copy resource to file
+          FileUtils.copyURLToFile(srcUrl, dstFile);
+        }
+
+      }
+    }
   }
 
   @AfterEach
