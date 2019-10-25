@@ -1098,7 +1098,7 @@ public class SolrArtifactIndexAdmin {
       retireConfigSet();
 
       // Update index to target version iteratively
-      for (int version = lockssConfigSetVersion; version <= targetVersion; version++) {
+      for (int version = lockssConfigSetVersion; version < targetVersion; version++) {
 
         // Remove configuration set from previous iteration if it exists
         FileUtils.deleteDirectory(configDirPath.toFile());
