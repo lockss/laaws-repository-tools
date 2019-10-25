@@ -74,9 +74,20 @@ import java.util.stream.Collectors;
 public class SolrArtifactIndexAdmin {
   private final static L4JLogger log = L4JLogger.getLogger();
 
+  /**
+   * Latest version of the LOCKSS configuration set for {@link SolrArtifactIndex}.
+   */
   public static final int LATEST_LOCKSS_CONFIGSET_VERSION = 3;
-  public static final Version TARGET_LUCENE_VERSION = Version.LUCENE_7_2_1;
 
+  /**
+   * Target version of the Lucene index and segments.
+   */
+  public static final Version TARGET_LUCENE_VERSION = Version.fromBits(7, 2, 1);
+
+  /**
+   * The key in the custom user properties of the Solr core configuration overlay, used to track a Solr core's version
+   * of its installed LOCKSS configuration set.
+   */
   public static final String LOCKSS_CONFIGSET_VERSION_KEY = "lockss-configset-version";
 
   // COMMON ////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -99,14 +110,16 @@ public class SolrArtifactIndexAdmin {
   /**
    * This static class contains SolrArtifactIndex reindex operations.
    */
-  public static class BaseSolrArtifactIndexUpdater {
+  public static class SolrArtifactIndexReindex {
 
     /**
      * Reindexes artifacts in a Solr core or collection for a specific version of the LOCKSS provided Solr configuration
      * set.
+     * <p>
+     * Intended to be called by a loop over target versions. Does not iterative reindex operations up to target version!
      *
-     * @param solrClient
-     * @param targetVersion
+     * @param solrClient    A SolrJ {@code SolrCore} implementation.
+     * @param targetVersion A {@code int} representing the target version of the reindex operation.
      */
     public static void reindexArtifactsForVersion(SolrClient solrClient, int targetVersion)
         throws SolrServerException, SolrResponseErrorException, IOException {
@@ -116,10 +129,6 @@ public class SolrArtifactIndexAdmin {
       try {
 
         switch (targetVersion) {
-          case 1:
-            // NOP
-            break;
-
           case 2:
             reindexArtifactsFrom1To2(solrClient);
             break;
@@ -138,7 +147,20 @@ public class SolrArtifactIndexAdmin {
       }
     }
 
-    private static void reindexArtifactsFrom1To2(SolrClient solrClient) throws IOException, SolrServerException, SolrResponseErrorException {
+    /**
+     * Performs a reindex (atomic update) of artifacts between LOCKSS configuration set version 1 to 2.
+     * <p>
+     * Changes:
+     * * The collectionDate field type changed from a Trie-based 'long' to Point-based 'plong'.
+     * * Introduced a new sortUri field to influence correct sort order on an artifact's URI. This solution was chosen
+     * over a Java CollationField or ICUCollationField for operation and administrative simplicity.
+     *
+     * @param solrClient A SolrJ {@code SolrCore} implementation.
+     * @throws IOException
+     * @throws SolrServerException
+     * @throws SolrResponseErrorException
+     */
+    public static void reindexArtifactsFrom1To2(SolrClient solrClient) throws IOException, SolrServerException, SolrResponseErrorException {
       try {
 
         // Loop through all the documents in the index.
@@ -790,10 +812,9 @@ public class SolrArtifactIndexAdmin {
   // LOCAL /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
   /**
-   * This class contains operations necessary to update a Solr core provided its path on a local filesystem. It is
-   * primarily intended to be used to update Solr cores running under a stand-alone Solr server.
+   * This class contains operations necessary to administrate a Solr core on a local filesystem.
    */
-  public static class LocalSolrCoreAdmin extends BaseSolrArtifactIndexUpdater {
+  public static class LocalSolrCoreAdmin {
 
     public static final String CONFIGOVERLAY_FILE = "configoverlay.json";
     public static final String CONFIGOVERLAY_USERPROPS_KEY = "userProps";
@@ -802,7 +823,7 @@ public class SolrArtifactIndexAdmin {
      * The name of the Solr core. By default this is the name of the directory containing the {@code core.properties} of
      * the core, but the name can be specified in the properties file by setting the {@code name} field.
      */
-    String solrCoreName;
+    protected String solrCoreName;
 
     /**
      * The base path to the Solr home directory containing the core.
@@ -811,12 +832,12 @@ public class SolrArtifactIndexAdmin {
      * Solr Cloud cluster). The path can also be used to instantiate an {@code EmbeddedSolrServer} or
      * {@core CoreContainer}.
      */
-    Path solrHome;
+    protected Path solrHome;
 
     /**
      * Base path of the Solr core.
      */
-    Path instanceDir;
+    protected Path instanceDir;
 
     /**
      * The path to the core's configuration set.
@@ -826,7 +847,7 @@ public class SolrArtifactIndexAdmin {
      * {@code core.properties}) then this points to the path of the configuration set in the shared configuration set
      * base directory.
      */
-    Path configDirPath;
+    protected Path configDirPath;
 
     /**
      * The path to the core's data directory.
@@ -834,19 +855,19 @@ public class SolrArtifactIndexAdmin {
      * By default, this is the {@code data/} directory under the Solr core's instance directory, unless specified by
      * setting the {@code dataDir} property in {@code core.properties}.
      */
-    Path dataDir;
+    protected Path dataDir;
 
     /**
      * The path to the core's Lucene index.
      * <p>
      * By default, this is the {@code index/} directory under the core's data directory.
      */
-    Path indexDir;
+    protected Path indexDir;
 
     /**
      * The name of a shared configuration set used by the core.
      */
-    String sharedConfigSetName;
+    protected String sharedConfigSetName;
 
     /**
      * The path to the shared configuration set base directory.
@@ -854,12 +875,12 @@ public class SolrArtifactIndexAdmin {
      * By default, this is the {@code configsets/} directory under the Solr home directory, unless configured in
      * {@code solr.xml}.
      */
-    Path sharedConfigSetBaseDir;
+    protected Path sharedConfigSetBaseDir;
 
     /**
      * An integer representing the version of the LOCKSS Solr configuration set installed in this core.
      */
-    int lockssConfigSetVersion;
+    protected int lockssConfigSetVersion;
 
     /**
      * Constructor. Takes individual Solr core configuration parameters needed to perform an update of the Solr core.
@@ -897,8 +918,7 @@ public class SolrArtifactIndexAdmin {
     }
 
     /**
-     * Creates a new core in a Solr instance running in stand-alone mode. The config set used by the core must be made
-     * available to the Solr server under the core's instance directory, or as a common shared config set.
+     * Creates a new Solr core using the parameters of this {@code LocalSolrCoreAdmin}.
      *
      * @throws IOException
      * @throws SolrServerException
@@ -922,9 +942,11 @@ public class SolrArtifactIndexAdmin {
     }
 
     /**
+     * Creates a new Solr core under the provided Solr home base directory with the latest LOCKSS configuration set
+     * version.
      *
-     * @param solrHome
-     * @param solrCoreName
+     * @param solrHome     A {@code Path} containing the path to a Solr home base directory.
+     * @param solrCoreName A {@code String} containing the name of the Solr core to create.
      * @throws IOException
      * @throws SolrServerException
      */
@@ -932,6 +954,16 @@ public class SolrArtifactIndexAdmin {
       createCore(solrHome, solrCoreName, LATEST_LOCKSS_CONFIGSET_VERSION);
     }
 
+    /**
+     * Creates a new Solr core under the provided Solr home base directory with a specified version of the LOCKSS
+     * configuration set version.
+     *
+     * @param solrHome               A {@code Path} containing the path to a Solr home base directory.
+     * @param solrCoreName           A {@code String} containing the name of the Solr core to create.
+     * @param lockssConfigSetVersion An {@code int} containing the version of the LOCKSS configuration set to install.
+     * @throws IOException
+     * @throws SolrServerException
+     */
     public static void createCore(Path solrHome, String solrCoreName, int lockssConfigSetVersion) throws IOException, SolrServerException {
       // Solr core instance directory
       Path instanceDir = solrHome.resolve(String.format("lockss/cores/%s", solrCoreName));
@@ -947,7 +979,7 @@ public class SolrArtifactIndexAdmin {
           instanceDir.resolve("data"),
           instanceDir.resolve("data/index"),
 
-          // Not used
+          // Shared configuration set not used here
           null,
           null,
 
@@ -1029,7 +1061,12 @@ public class SolrArtifactIndexAdmin {
     }
 
     /**
-     * Update the configuration set of a LOCKSS repository Solr core.
+     * Updates the configuration set of the LOCKSS repository Solr core iteratively to the latest version, and performs
+     * any post-update Solr document reindexing.
+     *
+     * @throws IOException
+     * @throws SolrResponseErrorException
+     * @throws SolrServerException
      */
     public void updateConfigSet() throws IOException, SolrResponseErrorException, SolrServerException {
 
@@ -1053,7 +1090,7 @@ public class SolrArtifactIndexAdmin {
         // Perform post-installation tasks. We start/stop the server each iteration to avoid config sets changing from
         // under the embedded Solr server and causing unpredictable behavior.
         try (EmbeddedSolrServer solrClient = new EmbeddedSolrServer(solrHome, solrCoreName)) {
-          reindexArtifactsForVersion(solrClient, version + 1);
+          SolrArtifactIndexReindex.reindexArtifactsForVersion(solrClient, version + 1);
         } catch (SolrServerException | SolrResponseErrorException e) {
           log.error(
               "Caught an exception while attempting to reindex artifacts for target version [version: {}]: {}",
@@ -1134,7 +1171,7 @@ public class SolrArtifactIndexAdmin {
      * @param targetPath
      * @throws IOException
      */
-    public void retirePath(Path targetPath) throws IOException {
+    public static void retirePath(Path targetPath) throws IOException {
       String timestamp = DateTimeFormatter.BASIC_ISO_DATE.format(LocalDateTime.now());
       String suffix = String.format("saved.%s", timestamp);
 
@@ -1152,7 +1189,8 @@ public class SolrArtifactIndexAdmin {
     }
 
     /**
-     * Adds a suffix extension to a directory or file.
+     * Adds a suffix extension to a directory or file. Appends a monotonically increasing whole number, starting at 1,
+     * if the destination already exists.
      *
      * @param targetPath A {@code Path} to the directory or file.
      * @param suffix     A {@code String} containing the suffix to add.
@@ -1204,7 +1242,7 @@ public class SolrArtifactIndexAdmin {
      *
      * @return A {@code boolean} indicating whether this Solr core uses a common configuration set.
      */
-    private boolean coreUsesCommonConfigSet() {
+    public boolean coreUsesCommonConfigSet() {
       return sharedConfigSetName != null;
     }
 
@@ -1217,7 +1255,7 @@ public class SolrArtifactIndexAdmin {
      * @param coreName A {@code String} containing the name of the Solr core.
      * @return A {@code LocalCoreUpdater} instance or {@code null} if the core could not be found.
      */
-    public static LocalSolrCoreAdmin fromSolrHomeWithName(Path solrHome, String coreName) {
+    public static LocalSolrCoreAdmin fromSolrHomeAndCoreName(Path solrHome, String coreName) {
       LocalSolrCoreAdmin updater = null;
 
       log.trace("solrHome = {}", solrHome.toAbsolutePath());
@@ -1275,18 +1313,17 @@ public class SolrArtifactIndexAdmin {
     }
   }
 
-
   // SOLR CLOUD ////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-  public static class SolrCloudCollectionUpdater extends BaseSolrArtifactIndexUpdater {
+  public static class SolrCloudCollectionAdmin {
     CloudSolrClient cloudClient;
 
-    public SolrCloudCollectionUpdater(CloudSolrClient cloudClient) {
+    public SolrCloudCollectionAdmin(CloudSolrClient cloudClient) {
       this.cloudClient = cloudClient;
     }
 
-    public static SolrCloudCollectionUpdater fromCloudSolrClient(CloudSolrClient cloudClient) {
-      return new SolrCloudCollectionUpdater(cloudClient);
+    public static SolrCloudCollectionAdmin fromCloudSolrClient(CloudSolrClient cloudClient) {
+      return new SolrCloudCollectionAdmin(cloudClient);
     }
 
     /**
@@ -1345,7 +1382,7 @@ public class SolrArtifactIndexAdmin {
         installConfigSetVersion(version + 1);
 
         // Perform post-installation tasks
-        reindexArtifactsForVersion(cloudClient, version + 1);
+        SolrArtifactIndexReindex.reindexArtifactsForVersion(cloudClient, version + 1);
 
         lockssConfigSetVersion = version + 1;
       }
@@ -1368,23 +1405,22 @@ public class SolrArtifactIndexAdmin {
         e.printStackTrace();
       }
     }
-  }
 
-  public static final String SOLR_CONFIGSET_PATH = "target/test-classes/solr";
-  public static final String SOLR_CONFIGSET_NAME = "testConfig";
+    public static final String SOLR_CONFIGSET_PATH = "target/test-classes/solr";
+    public static final String SOLR_CONFIGSET_NAME = "testConfig";
 
-  /**
-   * Returns a boolean indicating whether a collection exists in a Solr Cloud cluster.
-   *
-   * @param client
-   * @param collectionName
-   * @return
-   * @throws IOException
-   * @throws SolrServerException
-   */
-  public boolean collectionExists(CloudSolrClient client, String collectionName) throws IOException, SolrServerException {
-    List<String> collections = CollectionAdminRequest.listCollections(client);
-    return collections.contains(collectionName);
+    /**
+     * Returns a boolean indicating whether a collection exists in a Solr Cloud cluster.
+     *
+     * @param collectionName
+     * @return
+     * @throws IOException
+     * @throws SolrServerException
+     */
+    public boolean collectionExists(String collectionName) throws IOException, SolrServerException {
+      List<String> collections = CollectionAdminRequest.listCollections(cloudClient);
+      return collections.contains(collectionName);
+    }
   }
 
   // ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1436,7 +1472,7 @@ public class SolrArtifactIndexAdmin {
 
         case "update":
           // Update the local Solr core
-          LocalSolrCoreAdmin updater = LocalSolrCoreAdmin.fromSolrHomeWithName(solrHome, coreName);
+          LocalSolrCoreAdmin updater = LocalSolrCoreAdmin.fromSolrHomeAndCoreName(solrHome, coreName);
           updater.update();
           break;
 
@@ -1462,7 +1498,7 @@ public class SolrArtifactIndexAdmin {
         // Set default Solr Cloud client collection
         cloudClient.setDefaultCollection(collection);
 
-        SolrCloudCollectionUpdater updater = SolrCloudCollectionUpdater.fromCloudSolrClient(cloudClient);
+        SolrCloudCollectionAdmin updater = SolrCloudCollectionAdmin.fromCloudSolrClient(cloudClient);
         updater.update();
       }
 
