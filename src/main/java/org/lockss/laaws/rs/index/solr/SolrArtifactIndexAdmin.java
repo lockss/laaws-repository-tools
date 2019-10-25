@@ -34,6 +34,7 @@ import org.apache.commons.cli.*;
 import org.apache.commons.collections4.IteratorUtils;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.lucene.index.*;
 import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.util.Version;
@@ -965,6 +966,10 @@ public class SolrArtifactIndexAdmin {
      * @throws SolrServerException
      */
     public static void createCore(Path solrHome, String solrCoreName, int lockssConfigSetVersion) throws IOException, SolrServerException {
+      if (lockssConfigSetVersion <= 0) {
+        throw new IllegalArgumentException("Illegal LOCKSS configuration set version [version: " + lockssConfigSetVersion + "]");
+      }
+
       // Solr core instance directory
       Path instanceDir = solrHome.resolve(String.format("lockss/cores/%s", solrCoreName));
 
@@ -1057,6 +1062,10 @@ public class SolrArtifactIndexAdmin {
      * @throws IOException
      */
     public SegmentInfos getSegmentInfos() throws IOException {
+      if (indexDir == null) {
+        throw new IllegalStateException("Null index directory path");
+      }
+
       return SegmentInfos.readLatestCommit(FSDirectory.open(indexDir));
     }
 
@@ -1072,14 +1081,24 @@ public class SolrArtifactIndexAdmin {
 
       int targetVersion = LATEST_LOCKSS_CONFIGSET_VERSION;
 
+      if (lockssConfigSetVersion <= 0) {
+        // Yes: Invalid configuration set version: Attempt to ready from configuration overlay file.
+        lockssConfigSetVersion = getLockssConfigSetVersion();
+      }
+
       log.trace("currentVersion = {}", lockssConfigSetVersion);
       log.trace("targetVersion = {}", targetVersion);
+
+      if (lockssConfigSetVersion == targetVersion) {
+        log.trace("Already at latest; nothing to do");
+        return;
+      }
 
       // Retire the existing, production configuration set
       retireConfigSet();
 
       // Update index to target version iteratively
-      for (int version = lockssConfigSetVersion; version < targetVersion; version++) {
+      for (int version = lockssConfigSetVersion; version <= targetVersion; version++) {
 
         // Remove configuration set from previous iteration if it exists
         FileUtils.deleteDirectory(configDirPath.toFile());
@@ -1115,8 +1134,16 @@ public class SolrArtifactIndexAdmin {
      * @return An {@code int} containing the version of the configuration set.
      * @throws IOException
      */
-    public int getConfigSetVersion() throws IOException {
-      File configOverlayPath = configDirPath.resolve(CONFIGOVERLAY_FILE).toFile();
+    public int getLockssConfigSetVersion() throws IOException {
+      return getLockssConfigSetVersion(configDirPath) ;
+    }
+
+    public static int getLockssConfigSetVersion(Path configDir) throws IOException {
+      if (Objects.isNull(configDir)) {
+        throw new IllegalArgumentException("Null configuration set path");
+      }
+
+      File configOverlayPath = configDir.resolve(CONFIGOVERLAY_FILE).toFile();
 
       if (configOverlayPath.exists() && configOverlayPath.isFile()) {
         try (InputStream input = new FileInputStream(configOverlayPath)) {
@@ -1163,8 +1190,6 @@ public class SolrArtifactIndexAdmin {
       retirePath(configDirPath);
     }
 
-    private static final Map<String, Integer> timestampCounter = new HashMap<>();
-
     /**
      * Moves an existing directory or file out of the way by renaming it with a suffix containing a timestamp.
      *
@@ -1174,17 +1199,6 @@ public class SolrArtifactIndexAdmin {
     public static void retirePath(Path targetPath) throws IOException {
       String timestamp = DateTimeFormatter.BASIC_ISO_DATE.format(LocalDateTime.now());
       String suffix = String.format("saved.%s", timestamp);
-
-      synchronized (timestampCounter) {
-        Integer step = timestampCounter.getOrDefault(timestamp, new Integer(1));
-
-        if (step > 1) {
-          suffix = String.format("saved.%s.%d", timestamp, step);
-        }
-
-        timestampCounter.put(timestamp, step++);
-      }
-
       addSuffix(targetPath, suffix);
     }
 
@@ -1197,8 +1211,48 @@ public class SolrArtifactIndexAdmin {
      * @throws IOException
      */
     public static void addSuffix(Path targetPath, String suffix) throws IOException {
-      String backupTargetName = String.format("%s.%s", targetPath.getFileName(), suffix);
-      FileUtils.moveDirectory(targetPath.toFile(), targetPath.getParent().resolve(backupTargetName).toFile());
+
+      // Base file name and default target path
+      String baseFileName = String.format("%s.%s", targetPath.getFileName(), suffix);
+      Path dstTargetPath = targetPath.getParent().resolve(baseFileName);
+
+      int step = getLatestFileNameSuffix(dstTargetPath) + 1;
+
+      if (step > 0) {
+        // New target file name and path containing step suffix
+        String targetFileName = String.format("%s.%d", baseFileName, step);
+        dstTargetPath = targetPath.getParent().resolve(targetFileName);
+      }
+
+      FileUtils.moveDirectory(targetPath.toFile(), dstTargetPath.toFile());
+    }
+
+    /**
+     * Checks for siblings of the target path having the same name but numeric suffix and returns the maximum suffix. If
+     * no such siblings exist but the target exists, it returns 0. Otherwise, returns -1 to indicate the target does not
+     * exist.
+     *
+     * @param targetPath A {@code Path} containing the path to evaluate for maximum sibling suffix.
+     * @return An {@code int} indicating the maximum sibling suffix, or 0 indicating the path has no stepped siblings,
+     * or -1 if the target path does not exist.
+     */
+    public synchronized static int getLatestFileNameSuffix(Path targetPath) {
+      String baseFileName = String.format("%s.", targetPath.getFileName());
+      String[] allSiblingNames = targetPath.getParent().toFile().list();
+
+      OptionalInt optMaxStep = Arrays.stream(allSiblingNames)
+          .filter(name -> name.startsWith(baseFileName))
+          .map(name -> name.substring(baseFileName.length()))
+          .filter(StringUtils::isNumeric)
+          .mapToInt(Integer::parseInt)
+          .max();
+
+      if (optMaxStep.isPresent()) {
+        return optMaxStep.getAsInt();
+      }
+
+      // Return 0 to indicate the target exists but it has no stepped siblings; -1 to indicate the target does not exist
+      return targetPath.toFile().exists() ? 0 : -1;
     }
 
     /**
