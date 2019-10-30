@@ -1216,6 +1216,7 @@ public class SolrArtifactIndexAdmin {
       String baseFileName = String.format("%s.%s", targetPath.getFileName(), suffix);
       Path dstTargetPath = targetPath.getParent().resolve(baseFileName);
 
+      // Get next step
       int step = getLatestFileNameSuffix(dstTargetPath) + 1;
 
       if (step > 0) {
@@ -1342,6 +1343,10 @@ public class SolrArtifactIndexAdmin {
      * @return An instance of {@code LocalSolrCoreAdmin} wrapping the given {@code SolrCore}.
      */
     public static LocalSolrCoreAdmin fromSolrCore(SolrCore core) {
+      if (core == null) {
+        throw new IllegalArgumentException("Null Solr core");
+      }
+
       log.trace("getConfigName() = {}", core.getCoreDescriptor().getConfigName());
       log.trace("getConfigSet() = {}", core.getCoreDescriptor().getConfigSet());
 
@@ -1364,6 +1369,27 @@ public class SolrArtifactIndexAdmin {
 
           getLockssConfigSetVersion(core)
       );
+    }
+
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) return true;
+      if (o == null || getClass() != o.getClass()) return false;
+      LocalSolrCoreAdmin coreAdmin = (LocalSolrCoreAdmin) o;
+      return lockssConfigSetVersion == coreAdmin.lockssConfigSetVersion &&
+          solrCoreName.equals(coreAdmin.solrCoreName) &&
+          solrHome.equals(coreAdmin.solrHome) &&
+          instanceDir.equals(coreAdmin.instanceDir) &&
+          configDirPath.equals(coreAdmin.configDirPath) &&
+          dataDir.equals(coreAdmin.dataDir) &&
+          indexDir.equals(coreAdmin.indexDir) &&
+          Objects.equals(sharedConfigSetName, coreAdmin.sharedConfigSetName) &&
+          Objects.equals(sharedConfigSetBaseDir, coreAdmin.sharedConfigSetBaseDir);
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(solrCoreName, solrHome, instanceDir, configDirPath, dataDir, indexDir, sharedConfigSetName, sharedConfigSetBaseDir, lockssConfigSetVersion);
     }
   }
 

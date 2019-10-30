@@ -40,6 +40,10 @@ import org.apache.solr.client.solrj.embedded.JettyConfig;
 import org.apache.solr.client.solrj.impl.CloudSolrClient;
 import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.cloud.MiniSolrCloudCluster;
+import org.apache.solr.common.SolrException;
+import org.apache.solr.core.CoreContainer;
+import org.apache.solr.core.SolrCore;
+import org.apache.solr.core.SolrXmlConfig;
 import org.junit.jupiter.api.*;
 import org.lockss.laaws.rs.io.index.ArtifactIndex;
 import org.lockss.laaws.rs.io.index.solr.SolrArtifactIndex;
@@ -59,15 +63,13 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import static org.lockss.laaws.rs.index.solr.SolrArtifactIndexAdmin.LATEST_LOCKSS_CONFIGSET_VERSION;
 
 public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
   private final static L4JLogger log = L4JLogger.getLogger();
-
-  private static final Path SRC_SOLR_HOME_PATH = Paths.get("src/test/resources/solr");
-  private static final Path MASTER_SOLR_HOME_PATH = Paths.get("target/test-classes/solr");
 
   // Define our own Lucene Versions because we can't guarantee what will be available
   public static final Version LUCENE_6_6_5 = Version.fromBits(6, 6, 5);
@@ -175,10 +177,81 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
 
   public static final String TEST_SOLR_CORE_NAME = "testCore";
 
-  @Disabled
   @Test
   public void testLocalSolrCoreAdmin_addSuffix() throws Exception {
-    // TODO
+    // Create a temporary directory
+    File tmpDir = FileUtil.createTempDir("testAddSuffix", null);
+    Path tmpDirPath = tmpDir.toPath();
+    tmpDir.deleteOnExit();
+
+    // Base file name, suffix, and path
+    String baseFileName = "foo";
+    String baseFileSuffix = "xyzzy";
+    Path basePath = tmpDirPath.resolve(baseFileName);
+
+    // Suffixed file name and path
+    String suffixedFileName = String.format("%s.%s", baseFileName, baseFileSuffix);
+    Path suffixedBasePath = tmpDirPath.resolve(suffixedFileName);
+
+    // Sanity check
+    assertFalse(basePath.toFile().exists());
+    assertFalse(suffixedBasePath.toFile().exists());
+
+    // Assert FileNotFoundException is thrown if the base directory is missing
+    assertThrows(
+        FileNotFoundException.class,
+        () -> SolrArtifactIndexAdmin.LocalSolrCoreAdmin.addSuffix(basePath, baseFileSuffix)
+    );
+
+    // Create base directory
+    FileUtils.forceMkdir(basePath.toFile());
+    assertTrue(basePath.toFile().exists());
+
+    // Sanity check: Assert suffixed directory does not exist yet
+    assertFalse(suffixedBasePath.toFile().exists());
+
+    // Add suffix to base directory
+    SolrArtifactIndexAdmin.LocalSolrCoreAdmin.addSuffix(basePath, baseFileSuffix);
+
+    // Assert base directory moved to suffixed path
+    assertFalse(basePath.toFile().exists());
+    assertTrue(suffixedBasePath.toFile().exists());
+
+    for (int i = 1; i <= 5; i++) {
+      // Re-create base base directory
+      FileUtils.forceMkdir(basePath.toFile());
+      assertTrue(basePath.toFile().exists());
+
+      // Add suffix to base directory again
+      SolrArtifactIndexAdmin.LocalSolrCoreAdmin.addSuffix(basePath, baseFileSuffix);
+
+      // Assert base directory moved to expected suffixed destination
+      assertFalse(basePath.toFile().exists());
+      assertTrue(tmpDirPath.resolve(suffixedFileName + "." + i).toFile().exists());
+    }
+
+    // Sanity check
+    for (int step = 6; step <= 11; step++) {
+      assertFalse(tmpDirPath.resolve(suffixedFileName + "." + step).toFile().exists());
+    }
+
+    // Jump ahead and create a XXX.10 directory (and re-create the base directory)
+    FileUtils.forceMkdir(basePath.toFile());
+    FileUtils.forceMkdir(tmpDirPath.resolve(suffixedBasePath + ".10").toFile());
+
+    // Sanity check
+    assertTrue(basePath.toFile().exists());
+    assertTrue(tmpDirPath.resolve(suffixedBasePath + ".10").toFile().exists());
+
+    // Add suffix to base directory
+    SolrArtifactIndexAdmin.LocalSolrCoreAdmin.addSuffix(basePath, baseFileSuffix);
+
+    // Assert base moved to the expected suffixed destination (i.e., XXX.11)
+    assertFalse(basePath.toFile().exists());
+    assertTrue(tmpDirPath.resolve(suffixedBasePath + ".11").toFile().exists());
+
+    // Clean-up
+    tmpDir.delete();
   }
 
   @Test
@@ -189,7 +262,7 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
     assertFalse(admin.coreUsesCommonConfigSet());
 
     // Set common configuration set name
-    // FIXME: Do we really want to allow internal fields to be modified this way?
+    // FIXME: Do we really want to allow internal fields to be modified this way, even for testing?
     admin.sharedConfigSetName = "test";
 
     // Assert coreUsesCommonConfigSet() now returns true
@@ -219,6 +292,9 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
           version
       );
 
+      // Assert the core does not exist yet
+      assertCoreDoesNotExist(solrCoreName);
+
       // Create Solr core
       admin.create();
 
@@ -229,14 +305,14 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
 
   @Test
   public void testLocalSolrCoreAdmin_createCoreWithLatest() throws Exception {
-    // Solr core name
-    String solrCoreName = TEST_SOLR_CORE_NAME;
+    // Assert the core does not exists yet
+    assertCoreDoesNotExist(TEST_SOLR_CORE_NAME);
 
     // Create core
-    SolrArtifactIndexAdmin.LocalSolrCoreAdmin.createCore(solrHomePath, solrCoreName);
+    SolrArtifactIndexAdmin.LocalSolrCoreAdmin.createCore(solrHomePath, TEST_SOLR_CORE_NAME);
 
     // Assert the core exists and has the expected version
-    assertCoreExistsAndConfigSetVersion(solrCoreName, LATEST_LOCKSS_CONFIGSET_VERSION);
+    assertCoreExistsAndConfigSetVersion(TEST_SOLR_CORE_NAME, LATEST_LOCKSS_CONFIGSET_VERSION);
   }
 
   @Test
@@ -252,11 +328,21 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
       // Solr core name
       String solrCoreName = String.format("%s-%d", TEST_SOLR_CORE_NAME, version);
 
+      // Assert the core does not exists yet
+      assertCoreDoesNotExist(solrCoreName);
+
       // Create core
       SolrArtifactIndexAdmin.LocalSolrCoreAdmin.createCore(solrHomePath, solrCoreName, version);
 
       // Assert the core exists and has the expected version
       assertCoreExistsAndConfigSetVersion(solrCoreName, version);
+    }
+  }
+
+  private void assertCoreDoesNotExist(String solrCoreName) throws Exception {
+    // Assert core does not exists according to Solr
+    try (EmbeddedSolrServer solrClient = new EmbeddedSolrServer(solrHomePath, solrCoreName)) {
+      assertFalse(SolrArtifactIndexAdmin.coreExists(solrClient, solrCoreName));
     }
   }
 
@@ -273,16 +359,99 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
     assertEquals(version, SolrArtifactIndexAdmin.LocalSolrCoreAdmin.getLockssConfigSetVersion(configDir));
   }
 
-  @Disabled
   @Test
   public void testLocalSolrCoreAdmin_fromSolrCore() throws Exception {
-    // TODO
+    // Assert passing a null SolrCore results in an IllegalArgumentException being thrown
+    assertThrows(IllegalArgumentException.class, () -> SolrArtifactIndexAdmin.LocalSolrCoreAdmin.fromSolrCore(null));
+
+    CoreContainer container = CoreContainer.createAndLoad(solrHomePath);
+
+    Map<String, SolrCore> cores = container.getCores().stream().collect(
+        Collectors.toMap(
+            core -> core.getName(),
+            core -> core
+        )
+    );
+
+    for (PackagedTestCore pkgCore : PackagedTestCore.values()) {
+
+      SolrArtifactIndexAdmin.LocalSolrCoreAdmin admin =
+          SolrArtifactIndexAdmin.LocalSolrCoreAdmin.fromSolrCore(cores.get(pkgCore.getName()));
+
+      SolrArtifactIndexAdmin.LocalSolrCoreAdmin expected = expected_fromSolrCore(cores.get(pkgCore.getName()));
+
+      assertEquals(expected, admin);
+
+    }
+
+    container.shutdown();
   }
 
-  @Disabled
+  private static SolrArtifactIndexAdmin.LocalSolrCoreAdmin expected_fromSolrCore(SolrCore core) throws Exception {
+    return new SolrArtifactIndexAdmin.LocalSolrCoreAdmin(
+        core.getName(),
+        Paths.get(core.getCoreContainer().getSolrHome()),
+        core.getResourceLoader().getInstancePath(),
+        Paths.get(core.getResourceLoader().getConfigDir()),
+        Paths.get(core.getDataDir()),
+        Paths.get(core.getIndexDir()),
+        core.getCoreDescriptor().getConfigSet(),
+
+        // Determine config set directory path: Set to configuration set directory path under shared configuration set
+        // base directory (as specified in solr.xml) if the core is configured to use a shared configuration set.
+        core.getCoreDescriptor().getConfigSet() == null ?
+            core.getCoreContainer().getNodeConfig().getConfigSetBaseDirectory() :
+            SolrXmlConfig.fromSolrHome(Paths.get(core.getCoreContainer().getSolrHome()))
+                .getConfigSetBaseDirectory()
+                .resolve(core.getCoreDescriptor().getConfigSet()),
+
+        SolrArtifactIndexAdmin.LocalSolrCoreAdmin.getLockssConfigSetVersion(core)
+    );
+  }
+
   @Test
   public void testLocalSolrCoreAdmin_fromSolrHomeAndCoreName() throws Exception {
-    // TODO
+    // Assert SolrException is thrown if Solr home path does not exist
+    assertThrows(
+        SolrException.class,
+        () -> SolrArtifactIndexAdmin.LocalSolrCoreAdmin.fromSolrHomeAndCoreName(solrHomePath.resolve("foo"), "foo")
+    );
+
+    // Assert unknown core name causes the method to return null
+    assertNull(SolrArtifactIndexAdmin.LocalSolrCoreAdmin.fromSolrHomeAndCoreName(solrHomePath, "foo"));
+
+    // Iterate over packaged Solr cores
+    for (PackagedTestCore pkgCore : PackagedTestCore.values()) {
+
+      // Get a packaged Solr core admin
+      SolrArtifactIndexAdmin.LocalSolrCoreAdmin admin = SolrArtifactIndexAdmin.LocalSolrCoreAdmin.fromSolrHomeAndCoreName(
+          solrHomePath, pkgCore.getName()
+      );
+
+      // Assert we got the same core admin
+      assertEquals(expected_fromSolrHomeAndCoreName(solrHomePath, pkgCore.getName()), admin);
+    }
+  }
+
+  private static SolrArtifactIndexAdmin.LocalSolrCoreAdmin expected_fromSolrHomeAndCoreName(Path solrHome, String coreName) throws Exception {
+    SolrArtifactIndexAdmin.LocalSolrCoreAdmin coreAdmin = null;
+
+    CoreContainer container = CoreContainer.createAndLoad(solrHome);
+
+    Map<String, SolrCore> cores = container.getCores().stream().collect(
+        Collectors.toMap(
+            core -> core.getName(),
+            core -> core
+        )
+    );
+
+    if (cores.containsKey(coreName)) {
+      coreAdmin = expected_fromSolrCore(cores.get(coreName));
+    }
+
+    container.shutdown();
+
+    return coreAdmin;
   }
 
   @Test
@@ -347,6 +516,9 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
         null,
         version
     );
+
+    // Assert core does not exist yet
+    assertCoreDoesNotExist(TEST_SOLR_CORE_NAME);
 
     // Create the Solr core
     admin.create();
@@ -563,6 +735,9 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
         1
     );
 
+    // Assert the core does not exist yet
+    assertCoreDoesNotExist(solrCoreName);
+
     // Create the Solr core with LOCKSS config set version 1
     admin.create();
 
@@ -616,6 +791,9 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
 
       // Create a LocalSolrCoreAdmin for testing
       SolrArtifactIndexAdmin.LocalSolrCoreAdmin coreAdmin = createTestLocalSolrCoreAdmin(coreName, version);
+
+      // Assert the core does not exist yet
+      assertCoreDoesNotExist(coreName);
 
       // Create the underlying core
       coreAdmin.create();
@@ -853,6 +1031,8 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
 
     return specs;
   }
+
+  private static final Path SRC_SOLR_HOME_PATH = Paths.get("src/test/resources/solr");
 
   @Disabled
   @Test
