@@ -34,8 +34,10 @@ import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.SolrRequest;
 import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.common.params.SolrParams;
+import org.apache.solr.common.util.ContentStream;
 
 import java.io.IOException;
+import java.util.Collection;
 
 public abstract class AdminInfoRequest<T extends AdminInfoResponse> extends SolrRequest<T> {
   public enum AdminInfoSection {
@@ -60,6 +62,14 @@ public abstract class AdminInfoRequest<T extends AdminInfoResponse> extends Solr
 
     @Override
     public SolrParams getParams() {
+      return null;
+    }
+
+    /**
+     * Needed to compile with Solr 6.x.
+     */
+    @Override
+    public Collection<ContentStream> getContentStreams() throws IOException {
       return null;
     }
 
