@@ -51,8 +51,19 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 public enum PackagedTestCore {
+  // Solr 6.x
   SOLR6_EMPTY_V1(Version.fromBits(6,6,5),  false, 1),
-  SOLR6_POPULATED_V1(Version.fromBits(6,6,5), true, 1);
+  SOLR6_POPULATED_V1(Version.fromBits(6,6,5), true, 1),
+  SOLR6_EMPTY_V2(Version.fromBits(6,6,5),  false, 2),
+  SOLR6_POPULATED_V2(Version.fromBits(6,6,5), true, 2),
+
+  // Solr 7.x
+  SOLR7_EMPTY_V1(Version.fromBits(7,2,1),  false, 1),
+  SOLR7_POPULATED_V1(Version.fromBits(7,2,1), true, 1),
+  SOLR7_EMPTY_V2(Version.fromBits(7,2,1),  false, 2),
+  SOLR7_POPULATED_V2(Version.fromBits(7,2,1), true, 2),
+  SOLR7_EMPTY_V3(Version.fromBits(7,2,1),  false, 3),
+  SOLR7_POPULATED_V3(Version.fromBits(7,2,1), true, 3);
 
   public static final String PACKAGED_SOLRHOME_FILELIST = "/solr/filelist.txt";
 
@@ -127,11 +138,24 @@ public enum PackagedTestCore {
    * @throws Exception
    */
   public void prepareSolrCore() throws Exception {
+    // Solr core instance directory
+    Path instanceDir = SRC_SOLR_HOME_PATH.resolve(String.format("lockss/cores/%s", getCoreName()));
 
-    // Don't populate this Solr core if it is not meant to be populated
-    if (!isPopulated()) {
-      return;
-    }
+    // Create core admin
+    SolrArtifactIndexAdmin.LocalSolrCoreAdmin coreAdmin = new SolrArtifactIndexAdmin.LocalSolrCoreAdmin(
+        getCoreName(),
+        SRC_SOLR_HOME_PATH,
+        instanceDir,
+        instanceDir.resolve("conf"),
+        instanceDir.resolve("data"),
+        instanceDir.resolve("data/index"),
+        null,
+        null,
+        getConfigSetVersion()
+    );
+
+    // Create the Solr core
+    coreAdmin.create();
 
     // Start an embedded Solr server pointing to the Solr home source directory
     try (EmbeddedSolrServer solrClient = new EmbeddedSolrServer(SRC_SOLR_HOME_PATH, getCoreName())) {
@@ -141,8 +165,10 @@ public enum PackagedTestCore {
       index.initIndex();
 
       // Populate Solr core
-      for (ArtifactSpec spec : getPackagedArtifactSpecs()) {
-        indexArtifact(solrClient, getArtifactBean(getConfigSetVersion(), spec));
+      if (isPopulated()) {
+        for (ArtifactSpec spec : getPackagedArtifactSpecs()) {
+          indexArtifact(solrClient, getArtifactBean(getConfigSetVersion(), spec));
+        }
       }
 
       // Shutdown the SolrArtifactIndex
@@ -175,13 +201,21 @@ public enum PackagedTestCore {
   }
 
   public static void prepareSolrData() {
-    for (PackagedTestCore testCore : values()) {
-      try {
-        testCore.prepareSolrCore();
-      } catch (Exception e) {
-        log.warn("Failed to to prepare data for Solr core [name: {}]: {}", testCore.getCoreName(), e);
-        e.printStackTrace();
+    List<PackagedTestCore> pCores = getCoresWithVersion(Version.LATEST);
+
+    if (pCores.size() > 0) {
+
+      for (PackagedTestCore testCore : getCoresWithVersion(Version.LATEST)) {
+        try {
+          testCore.prepareSolrCore();
+        } catch (Exception e) {
+          log.warn("Failed to to prepare data for Solr core [name: {}]: {}", testCore.getCoreName(), e);
+          e.printStackTrace();
+        }
       }
+
+    } else {
+      log.warn("No cores to prepare for this version of Solr [version: {}]", Version.LATEST);
     }
   }
 
@@ -193,8 +227,7 @@ public enum PackagedTestCore {
             .setArtifactId("aid")
             .setCollectionDate(0)
             .setStorageUrl("sUrl")
-            .setContent("hello")
-//            .setContent("\"Sometimes I can't find the right words.\"\n\"Sometimes there aren't any.\"")
+            .setContent("\"Sometimes I can't find the right words.\"\n\"Sometimes there aren't any.\"")
             .thenCommit()
     );
 
