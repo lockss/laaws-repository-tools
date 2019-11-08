@@ -35,6 +35,7 @@ import org.apache.lucene.index.SegmentInfos;
 import org.apache.lucene.util.Version;
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.SolrQuery;
+import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.embedded.EmbeddedSolrServer;
 import org.apache.solr.client.solrj.embedded.JettyConfig;
 import org.apache.solr.client.solrj.impl.CloudSolrClient;
@@ -45,11 +46,10 @@ import org.apache.solr.core.CoreContainer;
 import org.apache.solr.core.SolrCore;
 import org.apache.solr.core.SolrXmlConfig;
 import org.junit.jupiter.api.*;
-import org.lockss.laaws.rs.io.index.ArtifactIndex;
 import org.lockss.laaws.rs.io.index.solr.SolrArtifactIndex;
+import org.lockss.laaws.rs.io.index.solr.SolrResponseErrorException;
 import org.lockss.laaws.rs.model.*;
 import org.lockss.log.L4JLogger;
-import org.lockss.util.io.FileUtil;
 import org.lockss.util.test.LockssTestCase5;
 
 import java.io.*;
@@ -71,29 +71,28 @@ import static org.lockss.laaws.rs.index.solr.SolrArtifactIndexAdmin.LATEST_LOCKS
 public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
   private final static L4JLogger log = L4JLogger.getLogger();
 
-  // Define our own Lucene Versions because we can't guarantee what will be available
-  public static final Version LUCENE_6_6_5 = Version.fromBits(6, 6, 5);
-  public static final Version LUCENE_7_2_1 = Version.fromBits(7, 2, 1);
-  private static final Version LATEST_LUCENE_VERSION = LUCENE_7_2_1;
-
-  private SolrClient solrClient;
-  private static Path solrHomePath;
+  // Define our own latest Lucene Version because we can't guarantee what will be available
+  private static final Version LATEST_LUCENE_VERSION = Version.fromBits(7, 2, 1);
 
   // JUNIT /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-  private static final String PACKAGED_SOLRHOME_FILELIST = "/solr/filelist.txt";
+  private static Path solrHomePath;
 
+  /**
+   * Before each test, install the packaged Solr home via resources to a temporary directory on disk.
+   *
+   * @throws IOException
+   */
   @BeforeEach
   public void copyResourcesForTests() throws IOException {
     // Create a temporary directory to hold a copy of the test Solr environment
-    File tmpDir = FileUtil.createTempDir("testSolrHome", null);
-    tmpDir.deleteOnExit();
+    File tmpDir = getTempDir();
     solrHomePath = tmpDir.toPath();
 
     log.trace("solrHomePath = {}", solrHomePath);
 
     // Read file list
-    try (InputStream input = getClass().getResourceAsStream(PACKAGED_SOLRHOME_FILELIST)) {
+    try (InputStream input = getClass().getResourceAsStream(PackagedTestCore.PACKAGED_SOLRHOME_FILELIST)) {
       try (BufferedReader reader = new BufferedReader(new InputStreamReader(input))) {
 
         // Name of resource to load
@@ -115,30 +114,27 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
     }
   }
 
-  @AfterEach
-  public void shutdownEmbeddedSolrServer() throws IOException {
-    // Shutdown the embedded Solr server if one was started
-    if (solrClient != null) {
-      solrClient.close();
-    }
+  // UTILITIES: EmbeddedSolrServer and MiniSolrCloudCluster startup ////////////////////////////////////////////////////
 
-    // Clean-up temporary directory
-    solrHomePath.toFile().delete();
+  /**
+   * Starts an embedded Solr server using the provided Solr home base directory and default Solr core.
+   *
+   * @param solrHome    A {@link Path} to a Solr home base directory.
+   * @param defaultCore A {@link String} containing the name of the default Solr core for the embedded Solr server.
+   * @return A {@link EmbeddedSolrServer} instance.
+   */
+  @Deprecated
+  private SolrClient startEmbeddedSolrServer(Path solrHome, String defaultCore) {
+    return new EmbeddedSolrServer(solrHome, defaultCore);
   }
 
-  // UTILITIES /////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-  public SolrClient startEmbeddedSolrServer(Path solrHome, String defaultCore) {
-    if (solrClient != null) {
-      throw new IllegalStateException("An embedded Solr server is already running");
-    }
-
-    solrClient = new EmbeddedSolrServer(solrHome, defaultCore);
-
-    return solrClient;
-  }
-
-  protected SolrClient startMiniSolrCloudCluster() throws IOException {
+  /**
+   * Starts an {@link MiniSolrCloudCluster} for testing Solr Cloud operations.
+   *
+   * @return A {@link MiniSolrCloudCluster} instance.
+   * @throws IOException
+   */
+  private CloudSolrClient startMiniSolrCloudCluster() throws Exception {
     // Base directory for the MiniSolrCloudCluster
     Path tempDir = Files.createTempDirectory("MiniSolrCloudCluster");
 
@@ -146,43 +142,328 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
     JettyConfig.Builder jettyConfig = JettyConfig.builder();
     jettyConfig.waitForLoadingCoresToFinish(null);
 
-    try {
+    // Start new MiniSolrCloudCluster with default solr.xml
+    MiniSolrCloudCluster cluster = new MiniSolrCloudCluster(1, tempDir, jettyConfig.build());
 
-      // Start new MiniSolrCloudCluster with default solr.xml
-      MiniSolrCloudCluster cluster = new MiniSolrCloudCluster(1, tempDir, jettyConfig.build());
+    // Upload our Solr configuration set for tests
+//    cluster.uploadConfigSet(SOLR_CONFIG_PATH.toPath(), SOLR_CONFIG_NAME);
 
-      // Upload our Solr configuration set for tests
-//      cluster.uploadConfigSet(SOLR_CONFIG_PATH.toPath(), SOLR_CONFIG_NAME);
+    // Get a Solr client handle to the Solr Cloud cluster
+    CloudSolrClient solrClient = new CloudSolrClient.Builder()
+        .withZkHost(cluster.getZkServer().getZkAddress())
+        .build();
 
-      // Get a Solr client handle to the Solr Cloud cluster
-      solrClient = new CloudSolrClient.Builder()
-          .withZkHost(cluster.getZkServer().getZkAddress())
-          .build();
+    solrClient.connect();
 
-      ((CloudSolrClient) solrClient).connect();
-
-    } catch (Exception e) {
-      log.error("Could not start MiniSolrCloudCluster", e);
-    }
+    solrClient.close();
 
     return solrClient;
   }
 
-  // SolrArtifactIndexAdmin Tests //////////////////////////////////////////////////////////////////////////////////////////
+  // UTILITIES: Asserts ////////////////////////////////////////////////////////////////////////////////////////////////
+
+  /**
+   * Asserts that a Solr core by the given name does not exist under the test Solr home base directory.
+   *
+   * @param solrCoreName A {@link String} containing the Solr core name to assert non-existence.
+   * @throws Exception
+   */
+  private void assertCoreDoesNotExist(String solrCoreName) throws Exception {
+    // Assert core does not exists according to Solr
+    try (EmbeddedSolrServer solrClient = new EmbeddedSolrServer(solrHomePath, solrCoreName)) {
+      assertFalse(SolrArtifactIndexAdmin.coreExists(solrClient, solrCoreName));
+    }
+  }
+
+  /**
+   * Asserts that a Solr core exists under the test Solr home base directory, and that the expected LOCKSS configuration
+   * set version is installed. The latter is checked by reading the value of the LOCKSS configuration set version key
+   * from the userProps map in the configuration overlay file.
+   *
+   * @param solrCoreName    A {@link String} containing the name of the Solr core.
+   * @param expectedVersion A {@code int} containing the expected LOCKSS configuration set version.
+   * @throws Exception
+   */
+  private void assertLockssConfigSetVersion(String solrCoreName, int expectedVersion) throws Exception {
+    // Path to Solr core configuration set
+    Path configDir = solrHomePath.resolve(String.format("lockss/cores/%s/conf", solrCoreName));
+
+    // Assert core exists according to Solr
+    try (EmbeddedSolrServer solrClient = new EmbeddedSolrServer(solrHomePath, solrCoreName)) {
+      assertTrue(SolrArtifactIndexAdmin.coreExists(solrClient, solrCoreName));
+
+      // Assert the LOCKSS configuration set version of the Solr core is equal to expected version (via JSON parsing)
+      assertEquals(expectedVersion, SolrArtifactIndexAdmin.LocalSolrCoreAdmin.getLockssConfigSetVersion(configDir));
+
+      // Assert the LOCKSS configuration set version of the Solr core is equal to expected version (via SolrCore object)
+      SolrCore core = solrClient.getCoreContainer().getCore(solrCoreName);
+      assertEquals(expectedVersion, SolrArtifactIndexAdmin.LocalSolrCoreAdmin.getLockssConfigSetVersion(core));
+    }
+  }
+
+  /**
+   * Asserts that the configuration set a given path contains the expected set of files and correct checksums for a
+   * specified version of the LOCKSS configuration set.
+   *
+   * @param configDir A {@link Path} containing the path to a configuration set.
+   * @param version   A {@code int} containing the LOCKSS configuration set version to assert.
+   * @throws IOException
+   */
+  private void assertLockssConfigSet(Path configDir, int version) throws IOException {
+    // Name of file list resource for this version
+    String fileListResource = String.format("/solr/configsets/lockss/v%d/filelist.txt", version);
+
+    // Read file list
+    InputStream input = getClass().getResourceAsStream(fileListResource);
+
+    try (BufferedReader reader = new BufferedReader(new InputStreamReader(input))) {
+
+      // Name of resource to load
+      String resourceName;
+
+      // Iterate resources from list and copy each into the Core's configuration set path
+      while ((resourceName = reader.readLine()) != null) {
+
+        // Source resource URL
+        URL resUrl = getClass().getResource(
+            String.format("/solr/configsets/lockss/v%d/conf/%s", version, resourceName)
+        );
+
+        // Destination file
+        File dstFile = configDir.resolve(resourceName).toFile();
+
+        // Assert destination file exists
+        assertTrue(dstFile.exists());
+        assertTrue(dstFile.isFile());
+
+        // Compute checksum of resource and file
+        long resChecksum = FileUtils.checksumCRC32(FileUtils.toFile(resUrl));
+        long dstChecksum = FileUtils.checksumCRC32(dstFile);
+
+        // Assert checksums match
+        assertEquals(resChecksum, dstChecksum,
+            String.format(
+                "Checksum of file does not match resource [file: %s, fileChecksum: %d, resourceChecksum: %d]",
+                dstFile,
+                resChecksum,
+                dstChecksum
+            )
+        );
+      }
+    }
+  }
+
+  /**
+   * Asserts the minimum segment version among the Lucene segments in a packaged Solr test core.
+   *
+   * @param core     A {@link PackagedTestCore} packaged Solr test core.
+   * @param expected The expected minimum Lucene segment {@link Version}.
+   * @throws Exception
+   */
+  private void assertMinSegmentLuceneVersion(PackagedTestCore core, Version expected) throws Exception {
+    // Get segment infos from core
+    SegmentInfos segInfos = getTestCoreAdmin(core).getSegmentInfos();
+
+    if (core.isPopulated()) {
+      // Assert the index minimum segment version is the expected version
+      assertNotNull(segInfos);
+      assertNotNull(segInfos.getMinSegmentLuceneVersion());
+      assertEquals(expected, segInfos.getMinSegmentLuceneVersion());
+    } else {
+      // Assert no segments and null minimum segment version
+      assertEquals(0, segInfos.size());
+      assertNull(segInfos.getMinSegmentLuceneVersion());
+    }
+  }
+
+  /**
+   * Asserts that a {@link PackagedTestCore} contains the expected set of artifacts used to prepare the core.
+   *
+   * @param core A {@link PackagedTestCore} to assert contains the expected set of artifacts used to create the core.
+   * @throws Exception
+   */
+  private void assertPackagedArtifacts(PackagedTestCore core) throws Exception {
+    assertPackagedArtifacts(core, core.getArtifactClass());
+  }
+
+  /**
+   * Asserts that a {@link PackagedTestCore} contains the expected set of artifacts used to prepare the core.
+   *
+   * @param core          A {@link PackagedTestCore} to assert contains the expected set of artifacts used to create the core.
+   * @param artifactClass A {@code Class<T>} containing the type of the artifact in the packaged test
+   * @param <T>
+   * @throws Exception
+   */
+  private <T> void assertPackagedArtifacts(PackagedTestCore core, Class<T> artifactClass) throws Exception {
+    log.trace("Artifact = {}", artifactClass);
+
+    // FIXME: This is kind of hacky...
+    Method fromArtifactSpec = artifactClass.getMethod("fromArtifactSpec", ArtifactSpec.class);
+
+    try (EmbeddedSolrServer solrClient = new EmbeddedSolrServer(solrHomePath, core.getCoreName())) {
+      // New empty list to hold expected artifacts
+      List<T> expected = new ArrayList<>();
+
+      if (core.isPopulated()) {
+        // Yes: Populate expected artifacts list from list of packaged artifact specs
+        for (ArtifactSpec spec : PackagedTestCore.getPackagedArtifactSpecs()) {
+          // Invoke fromArtifactSpec(...) and add versioned artifact interpretation to expected list
+          T obj = (T) fromArtifactSpec.invoke(artifactClass, spec);
+          expected.add(obj);
+        }
+      }
+
+      // Query for all Solr documents (artifacts) in the index
+      SolrQuery q = new SolrQuery("*:*");
+      QueryResponse response = solrClient.query(q);
+
+      // Get all artifacts in the index using the versioned artifact class
+      List<T> artifacts = response.getBeans(artifactClass);
+
+      log.debug("expected = {}", expected);
+      log.debug("actual = {}", artifacts);
+
+      // Assert set of expected artifacts matches the set of artifacts in the index
+      assertIterableEquals(expected, artifacts);
+    }
+  }
+
+  /**
+   * Adds an artifact bean to a the index of the default Solr core of a SolrClient connection.
+   *
+   * @param solrClient An implementation of {@link SolrClient}.
+   * @param obj        An artifact bean {@code Object}.
+   * @throws IOException
+   */
+  private static void indexArtifactBean(SolrClient solrClient, Object obj) throws IOException {
+    try {
+      SolrArtifactIndex.handleSolrResponse(solrClient.addBean(obj), "Problem adding artifact bean to Solr");
+      SolrArtifactIndex.handleSolrResponse(solrClient.commit(), "Problem committing addition of artifact bean to Solr");
+    } catch (SolrResponseErrorException | SolrServerException e) {
+      throw new IOException(e);
+    }
+  }
+
+  /**
+   * Returns an Solr artifact bean object, provided an {@link ArtifactSpec} and the target LOCKSS configuration set
+   * version (i.e., schema version).
+   *
+   * @param version A {@code int} containing the target LOCKSS configuration set version.
+   * @param spec The {@link ArtifactSpec} that will be interpreted as a versioned artifact bean.
+   * @return The artifact bean {@link Object}.
+   */
+  private static Object getArtifactBean(int version, ArtifactSpec spec) {
+    switch (version) {
+      case 1:
+        return V1Artifact.fromArtifactSpec(spec);
+
+      case 2:
+      case 3:
+        return V2Artifact.fromArtifactSpec(spec);
+
+      default:
+        log.error("Unknown LOCKSS configuration set version [version: {}]", version);
+        throw new IllegalArgumentException("Unknown version");
+    }
+  }
+
+  /**
+   * Creates a {@link SolrArtifactIndexAdmin.LocalSolrCoreAdmin} representing a default Solr core structure, for testing
+   * purposes only.
+   * <p>
+   * The Solr core is not created by this operation.
+   *
+   * @param coreName A {@link String} containing the name of the Solr core.
+   * @return A {@link SolrArtifactIndexAdmin.LocalSolrCoreAdmin} instance representing a Solr core that does not exist.
+   */
+  private SolrArtifactIndexAdmin.LocalSolrCoreAdmin createTestLocalSolrCoreAdmin(String coreName, int version) {
+    // Solr core instance directory
+    Path instanceDir = solrHomePath.resolve(String.format("lockss/cores/%s", coreName));
+
+    return new SolrArtifactIndexAdmin.LocalSolrCoreAdmin(
+        coreName,
+        solrHomePath,
+        instanceDir,
+        instanceDir.resolve("conf"),
+        instanceDir.resolve("data"),
+        instanceDir.resolve("data/index"),
+        null,
+        null,
+        version
+    );
+  }
+
+  /**
+   * Returns an instance of LocalSolrCoreAdmin for this packaged test core from the test Solr home base directory.
+   *
+   * @return
+   */
+  private SolrArtifactIndexAdmin.LocalSolrCoreAdmin getTestCoreAdmin(PackagedTestCore core) {
+    return SolrArtifactIndexAdmin.LocalSolrCoreAdmin.fromSolrHomeAndCoreName(solrHomePath, core.getCoreName());
+  }
+
+  /**
+   * Creates a {@link SolrArtifactIndexAdmin.LocalSolrCoreAdmin} provided the name of the core and the Solr home base
+   * directory under which the core's instance directory resides.
+   *
+   * @param solrHome A {@link Path} to the Solr home base directory.
+   * @param coreName A {@link String} containing the name of the Solr core.
+   * @return A {@link SolrArtifactIndexAdmin.LocalSolrCoreAdmin} instance or {@code null} if the core doesn't exist.
+   * @throws Exception
+   */
+  private static SolrArtifactIndexAdmin.LocalSolrCoreAdmin
+  expected_fromSolrHomeAndCoreName(Path solrHome, String coreName) throws Exception {
+
+    CoreContainer container = CoreContainer.createAndLoad(solrHome);
+    SolrArtifactIndexAdmin.LocalSolrCoreAdmin coreAdmin = expected_fromSolrCore(container.getCore(coreName));
+    container.shutdown();
+    return coreAdmin;
+  }
+
+  /**
+   * Creates a {@link SolrArtifactIndexAdmin.LocalSolrCoreAdmin} provided a {@link SolrCore} object.
+   *
+   * @param core A {@link SolrCore} instance.
+   * @return A {@link SolrArtifactIndexAdmin.LocalSolrCoreAdmin} to administrate the provided {@link SolrCore}.
+   * @throws Exception
+   */
+  private static SolrArtifactIndexAdmin.LocalSolrCoreAdmin expected_fromSolrCore(SolrCore core) throws Exception {
+    return new SolrArtifactIndexAdmin.LocalSolrCoreAdmin(
+        core.getName(),
+        Paths.get(core.getCoreContainer().getSolrHome()),
+        core.getResourceLoader().getInstancePath(),
+        Paths.get(core.getResourceLoader().getConfigDir()),
+        Paths.get(core.getDataDir()),
+        Paths.get(core.getIndexDir()),
+        core.getCoreDescriptor().getConfigSet(),
+
+        // Determine config set directory path: Set to configuration set directory path under shared configuration set
+        // base directory (as specified in solr.xml) if the core is configured to use a shared configuration set.
+        core.getCoreDescriptor().getConfigSet() == null ?
+            core.getCoreContainer().getNodeConfig().getConfigSetBaseDirectory() :
+            SolrXmlConfig.fromSolrHome(Paths.get(core.getCoreContainer().getSolrHome()))
+                .getConfigSetBaseDirectory()
+                .resolve(core.getCoreDescriptor().getConfigSet()),
+
+        SolrArtifactIndexAdmin.LocalSolrCoreAdmin.getLockssConfigSetVersion(core)
+    );
+  }
+
+  // TESTS: SolrCloudArtifactIndexAdmin ////////////////////////////////////////////////////////////////////////////////
 
   public static final String TEST_SOLR_COLLECTION_NAME = "testCollection";
 
+  // TODO
 
-  // LocalSolrCoreAdmin Tests //////////////////////////////////////////////////////////////////////////////////////////
+  // TESTS: LocalSolrCoreAdmin /////////////////////////////////////////////////////////////////////////////////////////
 
   public static final String TEST_SOLR_CORE_NAME = "testCore";
 
   @Test
   public void testLocalSolrCoreAdmin_addSuffix() throws Exception {
     // Create a temporary directory
-    File tmpDir = FileUtil.createTempDir("testAddSuffix", null);
+    File tmpDir = getTempDir();
     Path tmpDirPath = tmpDir.toPath();
-    tmpDir.deleteOnExit();
 
     // Base file name, suffix, and path
     String baseFileName = "foo";
@@ -249,14 +530,12 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
     // Assert base moved to the expected suffixed destination (i.e., XXX.11)
     assertFalse(basePath.toFile().exists());
     assertTrue(tmpDirPath.resolve(suffixedBasePath + ".11").toFile().exists());
-
-    // Clean-up
-    tmpDir.delete();
   }
 
   @Test
   public void testLocalSolrCoreAdmin_coreUsesCommonConfigSet() throws Exception {
-    SolrArtifactIndexAdmin.LocalSolrCoreAdmin admin = createTestLocalSolrCoreAdmin(TEST_SOLR_CORE_NAME);
+    // Create LocalSolrCoreAdmin that does NOT use a common configuration set
+    SolrArtifactIndexAdmin.LocalSolrCoreAdmin admin = createTestLocalSolrCoreAdmin(TEST_SOLR_CORE_NAME, -1);
 
     // Assert a null common configuration set name results in coreUsesCommonConfigSet() returning false
     assertFalse(admin.coreUsesCommonConfigSet());
@@ -271,26 +550,31 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
 
   @Test
   public void testLocalSolrCoreAdmin_create() throws Exception {
+    SolrArtifactIndexAdmin.LocalSolrCoreAdmin coreAdmin;
+    // TODO: Input to create() is its own LocalSolrCoreAdmin, so bad input has to come during construction
+
+    // Bad instance directory
+    coreAdmin = new SolrArtifactIndexAdmin.LocalSolrCoreAdmin(
+        "bad",
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        -1
+    );
+
+    assertThrows(IllegalStateException.class, () -> coreAdmin.create());
+
+    // Test creating cores by iterating over versions of the LOCKSS configuration set
     for (int version = 1; version <= LATEST_LOCKSS_CONFIGSET_VERSION; version++) {
-      // Solr core name
+      // Solr core name for this iteration
       String solrCoreName = String.format("%s-%d", TEST_SOLR_CORE_NAME, version);
 
-      // Path to Solr core configuration set
-      Path instanceDir = solrHomePath.resolve(String.format("lockss/cores/%s", solrCoreName));
-      Path configDir = instanceDir.resolve("conf");
-
       // Create a LocalSolrCoreAdmin instance with bare minimum parameters
-      SolrArtifactIndexAdmin.LocalSolrCoreAdmin admin = new SolrArtifactIndexAdmin.LocalSolrCoreAdmin(
-          solrCoreName,
-          solrHomePath,
-          instanceDir,
-          configDir,
-          null,
-          null,
-          null,
-          null,
-          version
-      );
+      SolrArtifactIndexAdmin.LocalSolrCoreAdmin admin = createTestLocalSolrCoreAdmin(solrCoreName, version);
 
       // Assert the core does not exist yet
       assertCoreDoesNotExist(solrCoreName);
@@ -299,7 +583,7 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
       admin.create();
 
       // Assert the core exists and has the expected version
-      assertCoreExistsAndConfigSetVersion(solrCoreName, version);
+      assertLockssConfigSetVersion(solrCoreName, version);
     }
   }
 
@@ -312,12 +596,12 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
     SolrArtifactIndexAdmin.LocalSolrCoreAdmin.createCore(solrHomePath, TEST_SOLR_CORE_NAME);
 
     // Assert the core exists and has the expected version
-    assertCoreExistsAndConfigSetVersion(TEST_SOLR_CORE_NAME, LATEST_LOCKSS_CONFIGSET_VERSION);
+    assertLockssConfigSetVersion(TEST_SOLR_CORE_NAME, LATEST_LOCKSS_CONFIGSET_VERSION);
   }
 
   @Test
   public void testLocalSolrCoreAdmin_createCoreWithVersion() throws Exception {
-    // Assert that negative version number throws IllegalArgument exception
+    // Assert that negative version number throws IllegalArgumentException
     assertThrows(
         IllegalArgumentException.class,
         () -> SolrArtifactIndexAdmin.LocalSolrCoreAdmin.createCore(solrHomePath, TEST_SOLR_CORE_NAME, -1)
@@ -325,38 +609,18 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
 
     // Iterate over versions of LOCKSS configuration set to install
     for (int version = 1; version <= LATEST_LOCKSS_CONFIGSET_VERSION; version++) {
-      // Solr core name
+      // Solr core name for this iteration
       String solrCoreName = String.format("%s-%d", TEST_SOLR_CORE_NAME, version);
 
-      // Assert the core does not exists yet
+      // Sanity check: Assert a core by that name does not already exist
       assertCoreDoesNotExist(solrCoreName);
 
-      // Create core
+      // Create the core
       SolrArtifactIndexAdmin.LocalSolrCoreAdmin.createCore(solrHomePath, solrCoreName, version);
 
-      // Assert the core exists and has the expected version
-      assertCoreExistsAndConfigSetVersion(solrCoreName, version);
+      // Assert the core exists and has the expected LOCKSS configuration set version
+      assertLockssConfigSetVersion(solrCoreName, version);
     }
-  }
-
-  private void assertCoreDoesNotExist(String solrCoreName) throws Exception {
-    // Assert core does not exists according to Solr
-    try (EmbeddedSolrServer solrClient = new EmbeddedSolrServer(solrHomePath, solrCoreName)) {
-      assertFalse(SolrArtifactIndexAdmin.coreExists(solrClient, solrCoreName));
-    }
-  }
-
-  private void assertCoreExistsAndConfigSetVersion(String solrCoreName, int version) throws Exception {
-    // Path to Solr core configuration set
-    Path configDir = solrHomePath.resolve(String.format("lockss/cores/%s/conf", solrCoreName));
-
-    // Assert core exists according to Solr
-    try (EmbeddedSolrServer solrClient = new EmbeddedSolrServer(solrHomePath, solrCoreName)) {
-      assertTrue(SolrArtifactIndexAdmin.coreExists(solrClient, solrCoreName));
-    }
-
-    // Assert the LOCKSS configuration set version of the Solr core is equal to expected version
-    assertEquals(version, SolrArtifactIndexAdmin.LocalSolrCoreAdmin.getLockssConfigSetVersion(configDir));
   }
 
   @Test
@@ -364,8 +628,10 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
     // Assert passing a null SolrCore results in an IllegalArgumentException being thrown
     assertThrows(IllegalArgumentException.class, () -> SolrArtifactIndexAdmin.LocalSolrCoreAdmin.fromSolrCore(null));
 
+    // Create a container of all cores under the test Solr home base directory
     CoreContainer container = CoreContainer.createAndLoad(solrHomePath);
 
+    // Build map from Solr core name to its SolrCore object
     Map<String, SolrCore> cores = container.getCores().stream().collect(
         Collectors.toMap(
             core -> core.getName(),
@@ -373,40 +639,17 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
         )
     );
 
-    for (PackagedTestCore pkgCore : PackagedTestCore.values()) {
+    for (PackagedTestCore pCore : PackagedTestCore.values()) {
+      // SolrCore object for this packaged test core
+      SolrCore core = cores.get(pCore.getCoreName());
 
-      SolrArtifactIndexAdmin.LocalSolrCoreAdmin admin =
-          SolrArtifactIndexAdmin.LocalSolrCoreAdmin.fromSolrCore(cores.get(pkgCore.getName()));
-
-      SolrArtifactIndexAdmin.LocalSolrCoreAdmin expected = expected_fromSolrCore(cores.get(pkgCore.getName()));
-
-      assertEquals(expected, admin);
-
+      // Assert that the LocalSolrCoreAdmin created by fromSolrCore(SolrCore) matches the expected LocalSolrCoreAdmin
+      SolrArtifactIndexAdmin.LocalSolrCoreAdmin expected = expected_fromSolrCore(core);
+      SolrArtifactIndexAdmin.LocalSolrCoreAdmin actual = SolrArtifactIndexAdmin.LocalSolrCoreAdmin.fromSolrCore(core);
+      assertEquals(expected, actual);
     }
 
     container.shutdown();
-  }
-
-  private static SolrArtifactIndexAdmin.LocalSolrCoreAdmin expected_fromSolrCore(SolrCore core) throws Exception {
-    return new SolrArtifactIndexAdmin.LocalSolrCoreAdmin(
-        core.getName(),
-        Paths.get(core.getCoreContainer().getSolrHome()),
-        core.getResourceLoader().getInstancePath(),
-        Paths.get(core.getResourceLoader().getConfigDir()),
-        Paths.get(core.getDataDir()),
-        Paths.get(core.getIndexDir()),
-        core.getCoreDescriptor().getConfigSet(),
-
-        // Determine config set directory path: Set to configuration set directory path under shared configuration set
-        // base directory (as specified in solr.xml) if the core is configured to use a shared configuration set.
-        core.getCoreDescriptor().getConfigSet() == null ?
-            core.getCoreContainer().getNodeConfig().getConfigSetBaseDirectory() :
-            SolrXmlConfig.fromSolrHome(Paths.get(core.getCoreContainer().getSolrHome()))
-                .getConfigSetBaseDirectory()
-                .resolve(core.getCoreDescriptor().getConfigSet()),
-
-        SolrArtifactIndexAdmin.LocalSolrCoreAdmin.getLockssConfigSetVersion(core)
-    );
   }
 
   @Test
@@ -421,44 +664,22 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
     assertNull(SolrArtifactIndexAdmin.LocalSolrCoreAdmin.fromSolrHomeAndCoreName(solrHomePath, "foo"));
 
     // Iterate over packaged Solr cores
-    for (PackagedTestCore pkgCore : PackagedTestCore.values()) {
+    for (PackagedTestCore pCore : PackagedTestCore.values()) {
 
       // Get a packaged Solr core admin
       SolrArtifactIndexAdmin.LocalSolrCoreAdmin admin = SolrArtifactIndexAdmin.LocalSolrCoreAdmin.fromSolrHomeAndCoreName(
-          solrHomePath, pkgCore.getName()
+          solrHomePath, pCore.getCoreName()
       );
 
       // Assert we got the same core admin
-      assertEquals(expected_fromSolrHomeAndCoreName(solrHomePath, pkgCore.getName()), admin);
+      assertEquals(expected_fromSolrHomeAndCoreName(solrHomePath, pCore.getCoreName()), admin);
     }
-  }
-
-  private static SolrArtifactIndexAdmin.LocalSolrCoreAdmin expected_fromSolrHomeAndCoreName(Path solrHome, String coreName) throws Exception {
-    SolrArtifactIndexAdmin.LocalSolrCoreAdmin coreAdmin = null;
-
-    CoreContainer container = CoreContainer.createAndLoad(solrHome);
-
-    Map<String, SolrCore> cores = container.getCores().stream().collect(
-        Collectors.toMap(
-            core -> core.getName(),
-            core -> core
-        )
-    );
-
-    if (cores.containsKey(coreName)) {
-      coreAdmin = expected_fromSolrCore(cores.get(coreName));
-    }
-
-    container.shutdown();
-
-    return coreAdmin;
   }
 
   @Test
   public void testLocalSolrCoreAdmin_getLatestFileNameSuffix() throws Exception {
     // Create a temporary directory in which to perform the test
-    File tmpDir = FileUtil.createTempDir("testGetLatestFileNameSuffix", null);
-    tmpDir.deleteOnExit();
+    File tmpDir = getTempDir();
     Path tmpDirPath = tmpDir.toPath();
 
     // Stem file path
@@ -482,9 +703,6 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
     // Create sibling with non-numeric suffix and assert we still get back 10
     FileUtils.touch(tmpDirPath.resolve("foo.bar").toFile());
     assertEquals(10, SolrArtifactIndexAdmin.LocalSolrCoreAdmin.getLatestFileNameSuffix(stem));
-
-    // Clean-up temporary directory
-    tmpDir.delete();
   }
 
   /**
@@ -495,56 +713,46 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
   @Test
   public void testLocalSolrCoreAdmin_getLockssConfigSetVersion() throws Exception {
     // Version of LOCKSS configuration set to install
-    int version = 1;
+    for (int version = 1; version <= LATEST_LOCKSS_CONFIGSET_VERSION; version++) {
 
-    // Solr core name
-    String solrCoreName = String.format("%s-%d", TEST_SOLR_CORE_NAME, version);
+      // Solr core name
+      String solrCoreName = String.format("%s-%d", TEST_SOLR_CORE_NAME, version);
 
-    // Path to Solr core configuration set
-    Path instanceDir = solrHomePath.resolve(String.format("lockss/cores/%s", solrCoreName));
-    Path configDir = instanceDir.resolve("conf");
+      // Create a LocalSolrCoreAdmin instance with bare minimum parameters
+      SolrArtifactIndexAdmin.LocalSolrCoreAdmin admin = createTestLocalSolrCoreAdmin(solrCoreName, version);
 
-    // Create a LocalSolrCoreAdmin instance with bare minimum parameters
-    SolrArtifactIndexAdmin.LocalSolrCoreAdmin admin = new SolrArtifactIndexAdmin.LocalSolrCoreAdmin(
-        solrCoreName,
-        solrHomePath,
-        instanceDir,
-        configDir,
-        null,
-        null,
-        null,
-        null,
-        version
-    );
+      // Assert core does not exist yet
+      assertCoreDoesNotExist(TEST_SOLR_CORE_NAME);
 
-    // Assert core does not exist yet
-    assertCoreDoesNotExist(TEST_SOLR_CORE_NAME);
+      // Create the Solr core
+      admin.create();
 
-    // Create the Solr core
-    admin.create();
+      // Assert the installed LOCKSS configuration set version is equal to expected version (via JSON)
+      assertEquals(version, admin.getLockssConfigSetVersion());
 
-    // Assert the LOCKSS configuration set version of the Solr core is equal to expected version
-    assertEquals(version, admin.getLockssConfigSetVersion());
+      // Assert the installed LOCKSS configuration set version is equal to expected version (via JSON, explict path)
+      assertEquals(version, SolrArtifactIndexAdmin.LocalSolrCoreAdmin.getLockssConfigSetVersion(admin.configDirPath));
 
-    // Assert the LOCKSS configuration set version of the Solr core is equal to expected version (from path)
-    assertEquals(version, SolrArtifactIndexAdmin.LocalSolrCoreAdmin.getLockssConfigSetVersion(configDir));
-
-    // TODO
-//    SolrCore core = getSolrCore();
-//    assertEquals(version, SolrArtifactIndexAdmin.LocalSolrCoreAdmin.getLockssConfigSetVersion(core));
+      // Assert the installed LOCKSS configuration set version is equal to expected version (via SolrCore)
+      CoreContainer container = CoreContainer.createAndLoad(solrHomePath);
+      SolrCore core = container.getCore(admin.solrCoreName);
+      assertEquals(version, SolrArtifactIndexAdmin.LocalSolrCoreAdmin.getLockssConfigSetVersion(core));
+      container.shutdown();
+    }
   }
 
   @Test
   public void testLocalSolrCoreAdmin_getSegmentInfos() throws Exception {
-    for (PackagedTestCore core : PackagedTestCore.values()) {
-      SolrArtifactIndexAdmin.LocalSolrCoreAdmin coreAdmin = core.getCoreAdmin();
+    for (PackagedTestCore pCore : PackagedTestCore.values()) {
+      SolrArtifactIndexAdmin.LocalSolrCoreAdmin coreAdmin = getTestCoreAdmin(pCore);
 
       SegmentInfos segInfos = coreAdmin.getSegmentInfos();
       assertNotNull(segInfos);
 
-      if (core.isPopulated()) {
+      if (pCore.isPopulated()) {
         assertTrue(segInfos.size() > 0);
         assertNotNull(segInfos.getMinSegmentLuceneVersion());
+        assertMinSegmentLuceneVersion(pCore, segInfos.getMinSegmentLuceneVersion());
       } else {
         assertEquals(0, segInfos.size());
         assertNull(segInfos.getMinSegmentLuceneVersion());
@@ -557,79 +765,14 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
     // Iterate over versions of LOCKSS configuration sets
     for (int version = 1; version <= LATEST_LOCKSS_CONFIGSET_VERSION; version++) {
       String coreName = String.format("testCore-%d", version);
-      SolrArtifactIndexAdmin.LocalSolrCoreAdmin coreAdmin = createTestLocalSolrCoreAdmin(coreName);
+      SolrArtifactIndexAdmin.LocalSolrCoreAdmin coreAdmin = createTestLocalSolrCoreAdmin(coreName, -1);
 
       // Install LOCKSS configuration set version into core
       coreAdmin.installLockssConfigSetVersion(version);
 
       assertEquals(version, coreAdmin.getLockssConfigSetVersion());
-      assertLockssConfigSetVersion(coreAdmin.configDirPath, version);
+      assertLockssConfigSet(coreAdmin.configDirPath, version);
     }
-  }
-
-  private void assertLockssConfigSetVersion(Path configDir, int version) throws IOException {
-    // Name of file list resource for this version
-    String fileListResource = String.format("/solr/configsets/lockss/v%d/filelist.txt", version);
-
-    // Read file list
-    InputStream input = getClass().getResourceAsStream(fileListResource);
-
-    try (BufferedReader reader = new BufferedReader(new InputStreamReader(input))) {
-
-      // Name of resource to load
-      String resourceName;
-
-      // Iterate resources from list and copy each into the Core's configuration set path
-      while ((resourceName = reader.readLine()) != null) {
-
-        // Source resource URL
-        URL resUrl = getClass().getResource(
-            String.format("/solr/configsets/lockss/v%d/conf/%s", version, resourceName)
-        );
-
-        // Destination file
-        File dstFile = configDir.resolve(resourceName).toFile();
-
-        // Assert destination file exists
-        assertTrue(dstFile.exists());
-        assertTrue(dstFile.isFile());
-
-        // Compute checksum of resource and file
-        long resChecksum = FileUtils.checksumCRC32(FileUtils.toFile(resUrl));
-        long dstChecksum = FileUtils.checksumCRC32(dstFile);
-
-        // Assert checksums match
-        assertEquals(resChecksum, dstChecksum,
-            String.format(
-                "Checksum of file does not match resource [file: %s, fileChecksum: %d, resourceChecksum: %d]",
-                dstFile,
-                resChecksum,
-                dstChecksum
-            )
-        );
-      }
-    }
-  }
-
-  public SolrArtifactIndexAdmin.LocalSolrCoreAdmin createTestLocalSolrCoreAdmin(String coreName) {
-    return createTestLocalSolrCoreAdmin(coreName, -1);
-  }
-
-  public SolrArtifactIndexAdmin.LocalSolrCoreAdmin createTestLocalSolrCoreAdmin(String coreName, int version) {
-    // Solr core instance directory
-    Path instanceDir = solrHomePath.resolve(coreName);
-
-    return new SolrArtifactIndexAdmin.LocalSolrCoreAdmin(
-        coreName,
-        solrHomePath,
-        instanceDir,
-        instanceDir.resolve("conf"),
-        instanceDir.resolve("data"),
-        instanceDir.resolve("data/index"),
-        null,
-        null,
-        version
-    );
   }
 
   /**
@@ -642,9 +785,8 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
   @Test
   public void testLocalSolrCoreAdmin_retireConfigSet() throws Exception {
     // Create a temporary directory to serve as our instance directory
-    File tmpDir = FileUtil.createTempDir("testRetireConfigSet", null);
+    File tmpDir = getTempDir();
     Path tmpDirPath = tmpDir.toPath();
-    tmpDir.deleteOnExit();
 
     // Path to fake configuration set under core instance directory
     Path confDir = tmpDirPath.resolve("conf");
@@ -709,85 +851,66 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
     // Assert target moved to correct suffixed destination (i.e., XXX.11)
     assertFalse(confDir.toFile().exists());
     assertTrue(tmpDirPath.resolve(baseFileName + ".11").toFile().exists());
-
-    // Clean-up
-    tmpDir.delete();
   }
 
+  /**
+   * Test for {@code SolrArtifactIndexAdmin.LocalSolrCoreAdmin#update()}.
+   * <p>
+   * This test exercises the cumulative action of {@code updateLuceneIndex()} and {@code updateConfigSet()}.
+   *
+   * @throws Exception
+   */
   @Test
   public void testLocalSolrCoreAdmin_updateFromEmpty() throws Exception {
-    // Solr core name
-    String solrCoreName = TEST_SOLR_CORE_NAME;
+    for (int version = 1; version <= LATEST_LOCKSS_CONFIGSET_VERSION; version++) {
+      // Solr core name
+      String solrCoreName = String.format("%s-%d", TEST_SOLR_CORE_NAME, version);
 
-    // Path to Solr core instance directory
-    Path instanceDir = solrHomePath.resolve(String.format("lockss/cores/%s", solrCoreName));
+      SolrArtifactIndexAdmin.LocalSolrCoreAdmin admin = createTestLocalSolrCoreAdmin(solrCoreName, version);
 
-    // Create a LocalSolrCoreAdmin instance with bare minimum parameters
-    SolrArtifactIndexAdmin.LocalSolrCoreAdmin admin = new SolrArtifactIndexAdmin.LocalSolrCoreAdmin(
-        solrCoreName,
-        solrHomePath,
-        instanceDir,
-        instanceDir.resolve("conf"),
-        instanceDir.resolve("data"),
-        instanceDir.resolve("data/index"),
-        null,
-        null,
-        1
-    );
+      // Assert the core does not exist yet
+      assertCoreDoesNotExist(solrCoreName);
 
-    // Assert the core does not exist yet
-    assertCoreDoesNotExist(solrCoreName);
+      // Create the Solr core with LOCKSS config set version 1
+      admin.create();
 
-    // Create the Solr core with LOCKSS config set version 1
-    admin.create();
+      // Get the LOCKSS configuration set version and assert it is latest
+      assertEquals(version, admin.getLockssConfigSetVersion());
 
-    // Perform update
-    admin.update();
+      // Perform update()
+      admin.update();
 
-    // Assert null minimum segment version because the index is empty / there are no segments yet
-    assertNull(admin.getSegmentInfos().getMinSegmentLuceneVersion());
+      // Get the LOCKSS configuration set version and assert it is latest
+      assertEquals(LATEST_LOCKSS_CONFIGSET_VERSION, admin.getLockssConfigSetVersion());
 
-    // Add an artifact to the core
-    try (SolrClient solrClient = startEmbeddedSolrServer(solrHomePath, solrCoreName)) {
-      addArtifactFromSpec(
-          solrClient,
-          ArtifactSpec.forCollAuUrl("c", "a", "u")
-              .setArtifactId("ok")
-              .setCollectionDate(0)
-              .setStorageUrl("url")
-              .generateContent()
-              .thenCommit()
-      );
+      // Assert null minimum segment version because the index is empty / there are no segments yet
+      assertNull(admin.getSegmentInfos().getMinSegmentLuceneVersion());
+
+      ArtifactSpec spec = ArtifactSpec.forCollAuUrl("c", "a", "u")
+          .setArtifactId("ok")
+          .setCollectionDate(0)
+          .setStorageUrl("url")
+          .generateContent()
+          .thenCommit();
+
+      // Add an artifact to the core
+      try (SolrClient solrClient = startEmbeddedSolrServer(solrHomePath, solrCoreName)) {
+        indexArtifactBean(solrClient, getArtifactBean(admin.getLockssConfigSetVersion(), spec));
+      }
+
+      // Get segment information from index and assert the minimum version is on or after the expected version (latest)
+      SegmentInfos segInfos = admin.getSegmentInfos();
+      assertNotNull(segInfos);
+      assertTrue(segInfos.getMinSegmentLuceneVersion().onOrAfter(LATEST_LUCENE_VERSION));
     }
-
-    // Get Lucene segment information from index and assert the minimum version is on or after the expected version
-    SegmentInfos segInfos = admin.getSegmentInfos();
-    assertNotNull(segInfos);
-    assertTrue(segInfos.getMinSegmentLuceneVersion().onOrAfter(LATEST_LUCENE_VERSION));
-
-    // Get the LOCKSS configuration set version and assert it is latest
-    assertEquals(LATEST_LOCKSS_CONFIGSET_VERSION, admin.getLockssConfigSetVersion());
-  }
-
-  private static void addArtifactFromSpec(SolrClient solrClient, ArtifactSpec spec) throws IOException {
-    // Instantiate and initialize a SolrArtifactIndex using the embedded Solr server
-    ArtifactIndex index = new SolrArtifactIndex(solrClient);
-    index.initIndex();
-
-    // Index the artifact data from spec
-    index.indexArtifact(spec.getArtifactData());
-
-    // Shutdown the Solr artifact index and underlying embedded Solr server
-    index.shutdownIndex();
   }
 
   @Test
   public void testLocalSolrCoreAdmin_updateConfigSetNewCore() throws Exception {
-
     for (int version = 1; version <= LATEST_LOCKSS_CONFIGSET_VERSION; version++) {
 
       // Solr core name for this iteration
-      String coreName = String.format("test-%d", version);
+      String coreName = String.format("%s-%d", TEST_SOLR_CORE_NAME, version);
 
       // Create a LocalSolrCoreAdmin for testing
       SolrArtifactIndexAdmin.LocalSolrCoreAdmin coreAdmin = createTestLocalSolrCoreAdmin(coreName, version);
@@ -795,41 +918,47 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
       // Assert the core does not exist yet
       assertCoreDoesNotExist(coreName);
 
-      // Create the underlying core
+      // Create the core
       coreAdmin.create();
 
-      // Assert the LOCKSS configuration set version installed is what we expect for this iteration
+      // Assert the LOCKSS configuration set version installed is what we created the core with
       assertEquals(version, coreAdmin.getLockssConfigSetVersion());
 
-      // TODO: Add some artifacts
+      ArtifactSpec spec = ArtifactSpec.forCollAuUrl("c", "a", "u")
+          .setArtifactId("ok")
+          .setCollectionDate(0)
+          .setStorageUrl("url")
+          .generateContent()
+          .thenCommit();
+
+      // Add an artifact to the core
+      try (SolrClient solrClient = startEmbeddedSolrServer(solrHomePath, coreName)) {
+        indexArtifactBean(solrClient, getArtifactBean(version, spec));
+      }
 
       // Update the configuration set
       coreAdmin.updateConfigSet();
 
       // Assert the installed LOCKSS configuration set is the latest version
       assertEquals(LATEST_LOCKSS_CONFIGSET_VERSION, coreAdmin.getLockssConfigSetVersion());
-      assertLockssConfigSetVersion(coreAdmin.configDirPath, LATEST_LOCKSS_CONFIGSET_VERSION);
-
-      // TODO: Verify artifacts
+      assertLockssConfigSet(coreAdmin.configDirPath, LATEST_LOCKSS_CONFIGSET_VERSION);
     }
-
-    // TODO: Finish
   }
 
   @Test
   public void testLocalSolrCoreAdmin_updateConfigSet() throws Exception {
     // Iterate over packaged test cores
-    for (PackagedTestCore core : PackagedTestCore.values()) {
+    for (PackagedTestCore pCore : PackagedTestCore.values()) {
 
       // Assert set of packaged artifacts is reflected core
-      assertPackagedArtifacts(core);
+      assertPackagedArtifacts(pCore);
 
       // Get LocalSolrCoreAdmin of packaged test core
-      SolrArtifactIndexAdmin.LocalSolrCoreAdmin coreAdmin = core.getCoreAdmin();
+      SolrArtifactIndexAdmin.LocalSolrCoreAdmin coreAdmin = getTestCoreAdmin(pCore);
       assertNotNull(coreAdmin);
 
       // Assert current configuration set version matches expected
-      assertEquals(core.getConfigSetVersion(), coreAdmin.getLockssConfigSetVersion());
+      assertEquals(pCore.getConfigSetVersion(), coreAdmin.getLockssConfigSetVersion());
 
       // Upgrade the core's Lucene index
       coreAdmin.updateConfigSet();
@@ -838,231 +967,85 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
       assertEquals(LATEST_LOCKSS_CONFIGSET_VERSION, coreAdmin.getLockssConfigSetVersion());
 
       // Assert set of packaged artifacts is still reflected core
-      assertPackagedArtifacts(core, core.getArtifactClass(LATEST_LOCKSS_CONFIGSET_VERSION));
+      assertPackagedArtifacts(pCore, pCore.getArtifactClass(LATEST_LOCKSS_CONFIGSET_VERSION));
     }
   }
 
   @Test
   public void testLocalSolrCoreAdmin_updateLuceneIndex() throws Exception {
     // Iterate over packaged test cores
-    for (PackagedTestCore core : PackagedTestCore.values()) {
+    for (PackagedTestCore pCore : PackagedTestCore.values()) {
 
       // Assert set of packaged artifacts is reflected core
-      assertPackagedArtifacts(core);
+      assertPackagedArtifacts(pCore);
 
       // Assert expected Lucene index version for this packaged core
-      assertLuceneVersion(core, core.getSolrVersion());
+      assertMinSegmentLuceneVersion(pCore, pCore.getSolrVersion());
 
       // Upgrade the core's Lucene index
-      SolrArtifactIndexAdmin.LocalSolrCoreAdmin coreAdmin = core.getCoreAdmin();
+      SolrArtifactIndexAdmin.LocalSolrCoreAdmin coreAdmin = getTestCoreAdmin(pCore);
       assertNotNull(coreAdmin);
       coreAdmin.updateLuceneIndex();
 
       // Assert Lucene index is at latest version
-      assertLuceneVersion(core, LATEST_LUCENE_VERSION);
+      assertMinSegmentLuceneVersion(pCore, LATEST_LUCENE_VERSION);
 
       // Assert set of packaged artifacts is still reflected core
-      assertPackagedArtifacts(core);
+      assertPackagedArtifacts(pCore);
     }
   }
 
-  private void assertPackagedArtifacts(PackagedTestCore core) throws Exception {
-    assertPackagedArtifacts(core, core.getArtifactClass());
-  }
+  // TESTS: main(...) //////////////////////////////////////////////////////////////////////////////////////////////////
 
-  private <T> void assertPackagedArtifacts(PackagedTestCore core, Class<T> artifactClass) throws Exception {
-    log.trace("Artifact = {}", artifactClass);
-
-    // FIXME: This is kind of hacky...
-    Method fromArtifactSpec = artifactClass.getMethod("fromArtifactSpec", ArtifactSpec.class);
-
-    try (EmbeddedSolrServer solrClient = new EmbeddedSolrServer(solrHomePath, core.getName())) {
-      // List to hold expected artifacts
-      List<T> expected = new ArrayList<>();
-
-      if (core.isPopulated()) {
-        // Populate expected artifacts list (by transforming test ArtifactSpecs to Artifacts)
-        for (ArtifactSpec spec : getPackagedArtifactSpecs()) {
-          T obj = (T) fromArtifactSpec.invoke(artifactClass, spec);
-          expected.add(obj);
-        }
-      }
-
-      // Query for all Solr documents (artifacts) in the index
-      SolrQuery q = new SolrQuery("*:*");
-      QueryResponse response = solrClient.query(q);
-
-      // Get all artifacts in the index
-      List<T> artifacts = response.getBeans(artifactClass);
-
-      log.debug("expected = {}", expected);
-      log.debug("actual = {}", artifacts);
-
-      // Assert set of expected artifacts matches the set of artifacts in the index
-      assertIterableEquals(expected, artifacts);
-    }
-  }
-
-  @Deprecated
-  private void assertTestV1Artifacts(PackagedTestCore core) throws Exception {
-    try (EmbeddedSolrServer solrClient = new EmbeddedSolrServer(solrHomePath, core.getName())) {
-      // List to hold expected artifacts
-      List<V1Artifact> expected = new ArrayList<>();
-
-      if (core.isPopulated()) {
-        // Build expected artifacts by transforming test ArtifactSpecs to V1Artifacts
-        expected = getPackagedArtifactSpecs().stream()
-            .map(spec -> V1Artifact.fromArtifactSpec(spec))
-            .collect(Collectors.toList());
-      }
-
-      // Query for all Solr documents (artifacts) in the index
-      SolrQuery q = new SolrQuery("*:*");
-      QueryResponse response = solrClient.query(q);
-
-      // Get all artifacts in the index
-      List<V1Artifact> artifacts = response.getBeans(V1Artifact.class);
-
-      log.debug("expected = {}", expected);
-      log.debug("actual = {}", artifacts);
-
-      // Assert the same set of V1Artifacts
-      assertIterableEquals(expected, artifacts);
-    }
-  }
-
-
-  public void assertLuceneVersion(PackagedTestCore testCore, Version expected) throws Exception {
-    // Get segment infos from core
-    SegmentInfos segInfos = testCore.getCoreAdmin().getSegmentInfos();
-
-    if (testCore.isPopulated()) {
-      // Assert the index minimum segment version is the expected version
-      assertNotNull(segInfos);
-      assertNotNull(segInfos.getMinSegmentLuceneVersion());
-      assertEquals(expected, segInfos.getMinSegmentLuceneVersion());
-    } else {
-      // Assert no segments and null minimum segment version
-      assertEquals(0, segInfos.size());
-      assertNull(segInfos.getMinSegmentLuceneVersion());
-    }
-  }
-
-  public enum PackagedTestCore {
-    SOLR6_EMPTY_V1(LUCENE_6_6_5, "solr6-empty-v1", false, 1),
-    SOLR6_POPULATED_V1(LUCENE_6_6_5, "solr6-populated-v1", true, 1);
-
-    private final Version solrVersion;
-    private final String name;
-    private final boolean populated;
-
-    private final int configSetVersion;
-
-    PackagedTestCore(Version solrVersion, String name, boolean populated, int configSetVersion) {
-      this.solrVersion = solrVersion;
-      this.name = name;
-      this.populated = populated;
-      this.configSetVersion = configSetVersion;
-    }
-
-    public static List<PackagedTestCore> getCoresWithVersion(Version version) {
-      return Arrays.stream(values())
-          .filter(core -> core.getSolrVersion().equals(version))
-          .collect(Collectors.toList());
-    }
-
-    public Version getSolrVersion() {
-      return solrVersion;
-    }
-
-    public String getName() {
-      return name;
-    }
-
-    public boolean isPopulated() {
-      return populated;
-    }
-
-    public int getConfigSetVersion() {
-      return configSetVersion;
-    }
-
-    /**
-     * Returns an instance of LocalSolrCoreAdmin for this packaged test core from the test Solr home base directory.
-     *
-     * @return
-     */
-    public SolrArtifactIndexAdmin.LocalSolrCoreAdmin getCoreAdmin() {
-      return SolrArtifactIndexAdmin.LocalSolrCoreAdmin.fromSolrHomeAndCoreName(solrHomePath, getName());
-    }
-
-    public <T> Class<T> getArtifactClass() {
-      return getArtifactClass(getConfigSetVersion());
-    }
-
-    public static <T> Class<T> getArtifactClass(int version) {
-      switch (version) {
-        case 1:
-          return (Class<T>) V1Artifact.class;
-        case 2:
-        case 3:
-          return (Class<T>) V2Artifact.class;
-
-        default:
-          return null;
-      }
-    }
-  }
-
-  // TESTS /////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-  public List<ArtifactSpec> getPackagedArtifactSpecs() {
-    List<ArtifactSpec> specs = new ArrayList<>();
-
-    specs.add(
-        ArtifactSpec.forCollAuUrlVer("c", "a", "u", 1)
-            .setArtifactId("aid")
-            .setCollectionDate(0)
-            .setStorageUrl("sUrl")
-            .setContent("hello")
-//            .setContent("\"Sometimes I can't find the right words.\"\n\"Sometimes there aren't any.\"")
-            .thenCommit()
-    );
-
-    return specs;
-  }
-
-  private static final Path SRC_SOLR_HOME_PATH = Paths.get("src/test/resources/solr");
-
-  @Disabled
   @Test
-  public void prepareSolrData() throws Exception {
+  public void testMain_createLocalCore() throws Exception {
+    // Create a new Solr core
+    String[] args = {"--action", "create", "--local", solrHomePath.toString(), "--core", "test"};
+    SolrArtifactIndexAdmin.main(args);
 
-    startEmbeddedSolrServer(SRC_SOLR_HOME_PATH, PackagedTestCore.SOLR6_POPULATED_V1.getName());
-
-    ArtifactIndex index = new SolrArtifactIndex(solrClient);
-
-    index.initIndex();
-
-    for (ArtifactSpec spec : getPackagedArtifactSpecs()) {
-      index.indexArtifact(spec.getArtifactData());
-    }
-
-    index.shutdownIndex();
-
-    for (Artifact artifact : index.getArtifacts("c", "a", true)) {
-      log.debug("artifact = {}", artifact);
-    }
-
-    shutdownEmbeddedSolrServer();
+    // Assert core exists and latest LOCKSS configuration set installed
+    assertLockssConfigSetVersion("test", LATEST_LOCKSS_CONFIGSET_VERSION);
+    assertLockssConfigSet(solrHomePath.resolve("lockss/cores/test/conf"), LATEST_LOCKSS_CONFIGSET_VERSION);
   }
+
+  @Test
+  public void testMain_updateLocalCores() throws Exception {
+    // Update existing Solr cores
+    for (PackagedTestCore pCore : PackagedTestCore.values()) {
+      String[] args = {"--action", "update", "--local", solrHomePath.toString(), "--core", pCore.getCoreName()};
+
+      log.trace("args = {}", Arrays.asList(args));
+
+      // Update the core through main()
+      SolrArtifactIndexAdmin.main(args);
+
+      // Assert update
+      SolrArtifactIndexAdmin.LocalSolrCoreAdmin admin = getTestCoreAdmin(pCore);
+
+      // Get the LOCKSS configuration set version and assert it is latest
+      assertEquals(LATEST_LOCKSS_CONFIGSET_VERSION, admin.getLockssConfigSetVersion());
+      assertLockssConfigSet(admin.configDirPath, LATEST_LOCKSS_CONFIGSET_VERSION);
+
+      if (pCore.isPopulated()) {
+        // Get segment information from index and assert the minimum version is on or after the latest version
+        assertMinSegmentLuceneVersion(pCore, LATEST_LUCENE_VERSION);
+      } else {
+        // Assert null minimum segment version because the index is empty / there are no segments yet
+        assertNull(admin.getSegmentInfos().getMinSegmentLuceneVersion());
+      }
+    }
+  }
+
+  // TESTS: Common /////////////////////////////////////////////////////////////////////////////////////////////////////
 
   @Test
   public void testCoreExists() throws Exception {
-    String coreName = PackagedTestCore.SOLR6_POPULATED_V1.getName();
-    startEmbeddedSolrServer(solrHomePath, coreName);
+    String coreName = PackagedTestCore.SOLR6_POPULATED_V1.getCoreName();
 
-    assertTrue(SolrArtifactIndexAdmin.coreExists(solrClient, coreName));
-    assertFalse(SolrArtifactIndexAdmin.coreExists(solrClient, "foo"));
+    try (SolrClient solrClient = startEmbeddedSolrServer(solrHomePath, coreName)) {
+      assertTrue(SolrArtifactIndexAdmin.coreExists(solrClient, coreName));
+      assertFalse(SolrArtifactIndexAdmin.coreExists(solrClient, "foo"));
+    }
   }
+
 }
