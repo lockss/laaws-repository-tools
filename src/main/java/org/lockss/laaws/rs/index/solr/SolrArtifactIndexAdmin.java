@@ -925,6 +925,10 @@ public class SolrArtifactIndexAdmin {
      * @throws SolrServerException
      */
     public void create() throws IOException, SolrServerException {
+      if (configDirPath == null) {
+        throw new IllegalStateException("Cannot create Solr core with a null configuration directory path");
+      }
+
       // Create the core instance directory
       FileUtil.ensureDirExists(configDirPath.toFile());
 
@@ -1125,8 +1129,8 @@ public class SolrArtifactIndexAdmin {
     }
 
     /**
-     * Determines the version of a LOCKSS Solr configuration set by reading its configuration overlay JSON file directly
-     * and returning the value of the "lockss-configset-version" key.
+     * Determines the version of the LOCKSS Solr configuration set in this core by reading its configuration overlay
+     * JSON file directly and returning the value of the "lockss-configset-version" key from userProps.
      * <p>
      * Returns 0 if the configuration overlay file could not be found, or if the LOCKSS configuration set version key
      * does not exist in the overlay.
@@ -1138,6 +1142,17 @@ public class SolrArtifactIndexAdmin {
       return getLockssConfigSetVersion(configDirPath) ;
     }
 
+    /**
+     * Determines the version of the LOCKSS Solr configuration set installed at a path by reading the configuration
+     * overlay JSON file and returning the value of the "lockss-configset-version" key from userProps.
+     * <p>
+     * Returns 0 if the configuration overlay file could not be found at the path, or if the LOCKSS configuration set
+     * version key does not exist in the overlay.
+     *
+     * @param configDir A {@link Path} containing the path to a configuration set.
+     * @return An {@code int} containing the version of the configuration set.
+     * @throws IOException
+     */
     public static int getLockssConfigSetVersion(Path configDir) throws IOException {
       if (Objects.isNull(configDir)) {
         throw new IllegalArgumentException("Null configuration set path");
@@ -1311,7 +1326,7 @@ public class SolrArtifactIndexAdmin {
      * @return A {@code LocalCoreUpdater} instance or {@code null} if the core could not be found.
      */
     public static LocalSolrCoreAdmin fromSolrHomeAndCoreName(Path solrHome, String coreName) {
-      LocalSolrCoreAdmin updater = null;
+      LocalSolrCoreAdmin coreAdmin = null;
 
       log.trace("solrHome = {}", solrHome.toAbsolutePath());
 
@@ -1327,12 +1342,12 @@ public class SolrArtifactIndexAdmin {
       log.trace("cores.keySet() = {}", cores.keySet());
 
       if (cores.containsKey(coreName)) {
-        updater = LocalSolrCoreAdmin.fromSolrCore(cores.get(coreName));
+        coreAdmin = LocalSolrCoreAdmin.fromSolrCore(cores.get(coreName));
       }
 
       container.shutdown();
 
-      return updater;
+      return coreAdmin;
     }
 
     /**
