@@ -45,6 +45,7 @@ import org.lockss.laaws.rs.model.ArtifactData;
 import org.lockss.laaws.rs.model.ArtifactIdentifier;
 import org.lockss.laaws.rs.util.ArtifactDataFactory;
 import org.lockss.log.L4JLogger;
+import org.lockss.util.FileUtil;
 import java.io.*;
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -108,6 +109,12 @@ public class WARCImporter {
    * 
    * @param url
    *          A URL with the location of the repository REST service to be used.
+   * @param user
+   *          A String with the name of the user to use to access the REST
+   *          service repository.
+   * @param password
+   *          A String with the password of the user to use to access the REST
+   *          service repository.
    * @param collection
    *          A String with the name of the collection where to import the WARC
    *          file.
@@ -115,8 +122,9 @@ public class WARCImporter {
    *          A String with the Archival Unit identifier linked to the imported
    *          WARC file.
    */
-  public WARCImporter(URL url, String collection, String auid) {
-    this(new RestLockssRepository(url), collection, auid);
+  public WARCImporter(URL url, String user, String password, String collection,
+      String auid) {
+    this(new RestLockssRepository(url, user, password), collection, auid);
   }
 
   /**
@@ -124,9 +132,9 @@ public class WARCImporter {
    * 
    * @param args
    *          A String[] with the command line arguments.
-   * @throws ParseException
-   * @throws MalformedURLException
-   * @throws IOException
+   * @throws ParseException if received.
+   * @throws MalformedURLException if received.
+   * @throws IOException if received.
    */
   public static void main(String[] args)
       throws ParseException, MalformedURLException, IOException {
@@ -139,6 +147,9 @@ public class WARCImporter {
     options.addOption("r", "restRepository", true, "Target repository URL");
     options.addOption("c", "collection", true, "Target collection ID");
     options.addOption("a", "auid", true, "Archival Unit ID (AUID)");
+    options.addOption("u", "user", true, "User name");
+    options.addOption("f", "passwordFile", true, "User password file pathname");
+    options.addOption("p", "password", true, "User password");
 
     // Parse options
     CommandLine cmd = new DefaultParser().parse(options, args);
@@ -164,9 +175,37 @@ public class WARCImporter {
       String restServiceUrlSpec = cmd.getOptionValue("restRepository");
       log.trace("Using the REST Service at: {}", restServiceUrlSpec);
 
+      // Get the name the user used to access the REST service.
+      String restServiceUser = cmd.getOptionValue("user");
+      log.trace("User name: {}", restServiceUser);
+
+      // Get the path name of the file with the password of the user used to
+      // access the REST service.
+      String restServicePasswordFile = cmd.getOptionValue("passwordFile");
+      log.trace("User password file: {}", restServicePasswordFile);
+
+      String restServicePassword = null;
+
+      // Check whether there is a password file path name.
+      if (restServicePasswordFile != null) {
+        // Yes: Get the password in the password file.
+	try {
+	  restServicePassword =
+	      FileUtil.readPasswdFile(restServicePasswordFile);
+	} catch (IOException ioe) {
+          log.warn("Exception caught getting service password", ioe);
+          // The password could not be obtained from the password file: Fall
+          // back to get the password from a configuration parameter.
+	  restServicePassword = cmd.getOptionValue("password");
+	}
+      } else {
+        // No: Fall back to get the password from a configuration parameter.
+	restServicePassword = cmd.getOptionValue("password");
+      }
+
       // Create the WARC file importer.
-      warcImporter =
-	  new WARCImporter(new URL(restServiceUrlSpec), collection, auid);
+      warcImporter = new WARCImporter(new URL(restServiceUrlSpec),
+	  restServiceUser, restServicePassword, collection, auid);
       // No: Check whether a local repository has been specified.
     } else if (cmd.hasOption("localRepository")) {
       // Yes: Get the local repository directory.
