@@ -52,31 +52,44 @@ import java.util.stream.Collectors;
 
 public enum PackagedTestCore {
   // Solr 6.x
-  SOLR6_EMPTY_V1(Version.fromBits(6,6,5),  false, 1),
-  SOLR6_POPULATED_V1(Version.fromBits(6,6,5), true, 1),
-  SOLR6_EMPTY_V2(Version.fromBits(6,6,5),  false, 2),
-  SOLR6_POPULATED_V2(Version.fromBits(6,6,5), true, 2),
+  SOLR6_EMPTY_V1("solr6-empty-v1", Version.fromBits(6,6,5), 1, false),
+  SOLR6_POPULATED_V1("solr6-populated-v1", Version.fromBits(6,6,5), 1, true),
+  SOLR6_EMPTY_V2("solr6-empty-v2", Version.fromBits(6,6,5), 2, false),
+  SOLR6_POPULATED_V2("solr6-populated-v2", Version.fromBits(6,6,5), 2, true),
 
   // Solr 7.x
-  SOLR7_EMPTY_V1(Version.fromBits(7,2,1),  false, 1),
-  SOLR7_POPULATED_V1(Version.fromBits(7,2,1), true, 1),
-  SOLR7_EMPTY_V2(Version.fromBits(7,2,1),  false, 2),
-  SOLR7_POPULATED_V2(Version.fromBits(7,2,1), true, 2),
-  SOLR7_EMPTY_V3(Version.fromBits(7,2,1),  false, 3),
-  SOLR7_POPULATED_V3(Version.fromBits(7,2,1), true, 3);
+  SOLR7_EMPTY_V1("solr7-empty-v1", Version.fromBits(7,2,1), 1, false),
+  SOLR7_POPULATED_V1("solr7-populated-v1", Version.fromBits(7,2,1), 1, true),
+  SOLR7_EMPTY_V2("solr7-empty-v2", Version.fromBits(7,2,1), 2, false),
+  SOLR7_POPULATED_V2("solr7-populated-v2", Version.fromBits(7,2,1), 2, true),
+  SOLR7_EMPTY_V3("solr7-empty-v3", Version.fromBits(7,2,1), 3, false),
+  SOLR7_POPULATED_V3("solr7-populated-v3", Version.fromBits(7,2,1), 3, true);
+
+  // Cores from sullockss-laaws-dev-02 and sullockss-laaws-dev-04
+//  LOCKSS_DEV2_20191115("dev2.lockss-repo.20191115", Version.fromBits(6, 6, 5), 1, true, false),
+//  LOCKSS_DEV4_20190829("dev4.lockss-repo.20190829", Version.fromBits(6, 6, 5), 2, true, false),
+//  LOCKSS_DEV4_20190909("dev4.lockss-repo.20190909", Version.fromBits(7, 2, 1), 2, true, false);
 
   public static final String PACKAGED_SOLRHOME_FILELIST = "/solr/filelist.txt";
 
   private final static L4JLogger log = L4JLogger.getLogger();
 
+  private final String coreName;
   private final Version solrVersion;
-  private final boolean populated;
   private final int configSetVersion;
+  private final boolean sampled;
+  private final boolean populate;
 
-  PackagedTestCore(Version solrVersion, boolean populated, int configSetVersion) {
+  PackagedTestCore(String coreName, Version solrVersion, int configSetVersion, boolean populate) {
+    this(coreName, solrVersion, configSetVersion, false, populate);
+  }
+
+  PackagedTestCore(String coreName, Version solrVersion, int configSetVersion, boolean sampled, boolean populate) {
+    this.coreName = coreName;
     this.solrVersion = solrVersion;
-    this.populated = populated;
     this.configSetVersion = configSetVersion;
+    this.sampled = sampled;
+    this.populate = populate;
   }
 
   public static List<PackagedTestCore> getCoresWithMajorVersion(int version) {
@@ -91,20 +104,30 @@ public enum PackagedTestCore {
         .collect(Collectors.toList());
   }
 
+  public static List<PackagedTestCore> getSampledCores() {
+    return Arrays.stream(values())
+        .filter(core -> core.isSampled())
+        .collect(Collectors.toList());
+  }
+
+  public String getCoreName() {
+    return coreName;
+  }
+
   public Version getSolrVersion() {
     return solrVersion;
   }
 
-  public String getCoreName() {
-    return name().replace("_", "-").toLowerCase();
+  public int getConfigSetVersion() {
+    return configSetVersion;
+  }
+
+  public boolean isSampled() {
+    return sampled;
   }
 
   public boolean isPopulated() {
-    return populated;
-  }
-
-  public int getConfigSetVersion() {
-    return configSetVersion;
+    return populate;
   }
 
   public <T> Class<T> getArtifactClass() {
@@ -138,6 +161,11 @@ public enum PackagedTestCore {
    * @throws Exception
    */
   public void prepareSolrCore() throws Exception {
+    if (isSampled()) {
+      // Sampled: Nothing to prepare
+      return;
+    }
+
     // Solr core instance directory
     Path instanceDir = SRC_SOLR_HOME_PATH.resolve(String.format("lockss/cores/%s", getCoreName()));
 
@@ -191,7 +219,7 @@ public enum PackagedTestCore {
     }
   }
 
-  public void indexArtifact(SolrClient solrClient, Object obj) throws IOException {
+  public static void indexArtifact(SolrClient solrClient, Object obj) throws IOException {
     try {
       SolrArtifactIndex.handleSolrResponse(solrClient.addBean(obj), "Problem adding artifact bean to Solr");
       SolrArtifactIndex.handleSolrResponse(solrClient.commit(), "Problem committing addition of artifact bean to Solr");
@@ -205,11 +233,11 @@ public enum PackagedTestCore {
 
     if (pCores.size() > 0) {
 
-      for (PackagedTestCore testCore : getCoresWithVersion(Version.LATEST)) {
+      for (PackagedTestCore pCore : getCoresWithVersion(Version.LATEST)) {
         try {
-          testCore.prepareSolrCore();
+          pCore.prepareSolrCore();
         } catch (Exception e) {
-          log.warn("Failed to to prepare data for Solr core [name: {}]: {}", testCore.getCoreName(), e);
+          log.warn("Failed to to prepare data for Solr core [name: {}]: {}", pCore.getCoreName(), e);
           e.printStackTrace();
         }
       }

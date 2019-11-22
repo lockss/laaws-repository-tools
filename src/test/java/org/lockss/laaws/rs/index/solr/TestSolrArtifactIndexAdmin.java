@@ -193,11 +193,11 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
       assertTrue(SolrArtifactIndexAdmin.coreExists(solrClient, solrCoreName));
 
       // Assert the LOCKSS configuration set version of the Solr core is equal to expected version (via JSON parsing)
-      assertEquals(expectedVersion, SolrArtifactIndexAdmin.LocalSolrCoreAdmin.getLockssConfigSetVersion(configDir));
+      assertEquals(expectedVersion, SolrArtifactIndexAdmin.LocalSolrCoreAdmin.getLockssConfigSetVersionFromOverlay(configDir));
 
       // Assert the LOCKSS configuration set version of the Solr core is equal to expected version (via SolrCore object)
       SolrCore core = solrClient.getCoreContainer().getCore(solrCoreName);
-      assertEquals(expectedVersion, SolrArtifactIndexAdmin.LocalSolrCoreAdmin.getLockssConfigSetVersion(core));
+      assertEquals(expectedVersion, SolrArtifactIndexAdmin.LocalSolrCoreAdmin.getLockssConfigSetVersionFromSolrCore(core));
     }
   }
 
@@ -264,7 +264,7 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
     // Get segment infos from core
     SegmentInfos segInfos = getTestCoreAdmin(core).getSegmentInfos();
 
-    if (core.isPopulated()) {
+    if (core.isPopulated() || core.isSampled()) {
       // Assert the index minimum segment version is the expected version
       assertNotNull(segInfos);
       assertNotNull(segInfos.getMinSegmentLuceneVersion());
@@ -283,7 +283,9 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
    * @throws Exception
    */
   private void assertPackagedArtifacts(PackagedTestCore core) throws Exception {
-    assertPackagedArtifacts(core, core.getArtifactClass());
+    if (core.isPopulated()) {
+      assertPackagedArtifacts(core, core.getArtifactClass());
+    }
   }
 
   /**
@@ -445,7 +447,7 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
                 .getConfigSetBaseDirectory()
                 .resolve(core.getCoreDescriptor().getConfigSet()),
 
-        SolrArtifactIndexAdmin.LocalSolrCoreAdmin.getLockssConfigSetVersion(core)
+        SolrArtifactIndexAdmin.LocalSolrCoreAdmin.getLockssConfigSetVersionFromSolrCore(core)
     );
   }
 
@@ -643,6 +645,8 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
       // SolrCore object for this packaged test core
       SolrCore core = cores.get(pCore.getCoreName());
 
+      assertNotNull(core);
+
       // Assert that the LocalSolrCoreAdmin created by fromSolrCore(SolrCore) matches the expected LocalSolrCoreAdmin
       SolrArtifactIndexAdmin.LocalSolrCoreAdmin expected = expected_fromSolrCore(core);
       SolrArtifactIndexAdmin.LocalSolrCoreAdmin actual = SolrArtifactIndexAdmin.LocalSolrCoreAdmin.fromSolrCore(core);
@@ -731,13 +735,28 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
       assertEquals(version, admin.getLockssConfigSetVersion());
 
       // Assert the installed LOCKSS configuration set version is equal to expected version (via JSON, explict path)
-      assertEquals(version, SolrArtifactIndexAdmin.LocalSolrCoreAdmin.getLockssConfigSetVersion(admin.configDirPath));
+      assertEquals(version, SolrArtifactIndexAdmin.LocalSolrCoreAdmin.getLockssConfigSetVersionFromOverlay(admin.configDirPath));
 
       // Assert the installed LOCKSS configuration set version is equal to expected version (via SolrCore)
       CoreContainer container = CoreContainer.createAndLoad(solrHomePath);
       SolrCore core = container.getCore(admin.solrCoreName);
-      assertEquals(version, SolrArtifactIndexAdmin.LocalSolrCoreAdmin.getLockssConfigSetVersion(core));
+      assertEquals(version, SolrArtifactIndexAdmin.LocalSolrCoreAdmin.getLockssConfigSetVersionFromSolrCore(core));
       container.shutdown();
+    }
+  }
+
+  @Test
+  public void testLocalSolrCoreAdmin_getLockssConfigSetVersionFromField() throws Exception {
+    for (PackagedTestCore core : PackagedTestCore.values()) {
+      int version = SolrArtifactIndexAdmin.LocalSolrCoreAdmin.getLockssConfigSetVersionFromField(
+          solrHomePath,
+          core.getCoreName()
+      );
+
+      log.trace("core = {}", core.getCoreName());
+      log.trace("version = {}", version);
+
+//      assertEquals(core.getConfigSetVersion(), version);
     }
   }
 
@@ -749,7 +768,7 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
       SegmentInfos segInfos = coreAdmin.getSegmentInfos();
       assertNotNull(segInfos);
 
-      if (pCore.isPopulated()) {
+      if (pCore.isPopulated() || pCore.isSampled()) {
         assertTrue(segInfos.size() > 0);
         assertNotNull(segInfos.getMinSegmentLuceneVersion());
         assertMinSegmentLuceneVersion(pCore, segInfos.getMinSegmentLuceneVersion());
@@ -950,8 +969,10 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
     // Iterate over packaged test cores
     for (PackagedTestCore pCore : PackagedTestCore.values()) {
 
-      // Assert set of packaged artifacts is reflected core
-      assertPackagedArtifacts(pCore);
+      // Assert set of packaged artifacts is reflected core (for generated cores)
+      if (pCore.isPopulated()) {
+        assertPackagedArtifacts(pCore);
+      }
 
       // Get LocalSolrCoreAdmin of packaged test core
       SolrArtifactIndexAdmin.LocalSolrCoreAdmin coreAdmin = getTestCoreAdmin(pCore);
@@ -966,8 +987,10 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
       // Assert configuration set version matches latest
       assertEquals(LATEST_LOCKSS_CONFIGSET_VERSION, coreAdmin.getLockssConfigSetVersion());
 
-      // Assert set of packaged artifacts is still reflected core
-      assertPackagedArtifacts(pCore, pCore.getArtifactClass(LATEST_LOCKSS_CONFIGSET_VERSION));
+      // Assert set of packaged artifacts is still reflected core (for generated cores)
+      if (pCore.isPopulated()) {
+        assertPackagedArtifacts(pCore, pCore.getArtifactClass(LATEST_LOCKSS_CONFIGSET_VERSION));
+      }
     }
   }
 
@@ -1026,7 +1049,7 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
       assertEquals(LATEST_LOCKSS_CONFIGSET_VERSION, admin.getLockssConfigSetVersion());
       assertLockssConfigSet(admin.configDirPath, LATEST_LOCKSS_CONFIGSET_VERSION);
 
-      if (pCore.isPopulated()) {
+      if (pCore.isPopulated() || pCore.isSampled()) {
         // Get segment information from index and assert the minimum version is on or after the latest version
         assertMinSegmentLuceneVersion(pCore, LATEST_LUCENE_VERSION);
       } else {

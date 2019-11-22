@@ -55,6 +55,8 @@ import org.apache.solr.common.SolrInputDocument;
 import org.apache.solr.common.cloud.SolrZkClient;
 import org.apache.solr.common.util.NamedList;
 import org.apache.solr.core.*;
+import org.apache.solr.schema.FieldType;
+import org.apache.solr.schema.IndexSchema;
 import org.json.JSONObject;
 import org.lockss.laaws.rs.io.index.solr.SolrArtifactIndex;
 import org.lockss.laaws.rs.io.index.solr.SolrQueryArtifactIterator;
@@ -215,6 +217,8 @@ public class SolrArtifactIndexAdmin {
 
         // Loop through all the documents in the index.
         for (Artifact artifact : IteratorUtils.asIterable(new SolrQueryArtifactIterator(solrClient, q))) {
+          artifact.setSortUri(artifact.getUri());
+
           handleSolrResponse(
               solrClient.addBean(artifact),
               "Problem reindexing artifact [artifactId: " + artifact.getId() + "]"
@@ -1139,7 +1143,13 @@ public class SolrArtifactIndexAdmin {
      * @throws IOException
      */
     public int getLockssConfigSetVersion() throws IOException {
-      return getLockssConfigSetVersion(configDirPath) ;
+      try {
+        return getLockssConfigSetVersionFromOverlay(configDirPath);
+      } catch (FileNotFoundException e) {
+        // If the configuration overlay file does not exist then try the "alpha1" method, where the LOCKSS configuration
+        // set version was recorded as a default value for the "solrSchemaLockssVersion" field in the Solr index schema.
+        return getLockssConfigSetVersionFromField(solrHome, solrCoreName);
+      }
     }
 
     /**
@@ -1151,30 +1161,97 @@ public class SolrArtifactIndexAdmin {
      *
      * @param configDir A {@link Path} containing the path to a configuration set.
      * @return An {@code int} containing the version of the configuration set.
-     * @throws IOException
+     * @throws FileNotFoundException If configuration overlay file does not exist.
      */
-    public static int getLockssConfigSetVersion(Path configDir) throws IOException {
+    public static int getLockssConfigSetVersionFromOverlay(Path configDir) throws IOException {
       if (Objects.isNull(configDir)) {
         throw new IllegalArgumentException("Null configuration set path");
       }
 
       File configOverlayPath = configDir.resolve(CONFIGOVERLAY_FILE).toFile();
 
-      if (configOverlayPath.exists() && configOverlayPath.isFile()) {
-        try (InputStream input = new FileInputStream(configOverlayPath)) {
-          JSONObject json = new JSONObject(IOUtils.toString(input, "UTF-8"));
+      // Read JSON file
+      try (InputStream input = new FileInputStream(configOverlayPath)) {
+        JSONObject json = new JSONObject(IOUtils.toString(input, "UTF-8"));
 
-          if (json.has(CONFIGOVERLAY_USERPROPS_KEY)) {
-            JSONObject userProps = json.getJSONObject(CONFIGOVERLAY_USERPROPS_KEY);
+        if (json.has(CONFIGOVERLAY_USERPROPS_KEY)) {
+          JSONObject userProps = json.getJSONObject(CONFIGOVERLAY_USERPROPS_KEY);
 
-            if (userProps.has(LOCKSS_CONFIGSET_VERSION_KEY)) {
-              return userProps.getInt(LOCKSS_CONFIGSET_VERSION_KEY);
-            }
+          if (userProps.has(LOCKSS_CONFIGSET_VERSION_KEY)) {
+            return userProps.getInt(LOCKSS_CONFIGSET_VERSION_KEY);
           }
         }
       }
 
       return 0;
+    }
+
+    /**
+     * Depreciated. The field in the Solr schema used to record the LOCKSS configuration set version.
+     */
+    private static final String lockssSolrSchemaVersionFieldName = "solrSchemaLockssVersion";
+
+    /**
+     * Reads the default value of the "solrSchemaLockssVersion" field from the core's schema (see managed-schema or
+     * schema.xml file) for the version of the LOCKSS configuration set installed in the core.
+     * <p>
+     * Depreciated. This is an "alpha1" technique. The LOCKSS configuration set version is now recorded in the
+     * configuration overlay as a userProps property.
+     *
+     * @param solrHome
+     * @param coreName
+     * @return
+     * @throws IOException
+     */
+    @Deprecated
+    public static int getLockssConfigSetVersionFromField(Path solrHome, String coreName) throws IOException {
+      // Get a CoreContainer contain cores from the Solr home base path
+      CoreContainer cc = CoreContainer.createAndLoad(solrHome);
+
+      try (SolrCore core = cc.getCore(coreName)) {
+        // Get index schema
+        IndexSchema schema = core.getLatestSchema();
+
+        if (schema.hasExplicitField(lockssSolrSchemaVersionFieldName)) {
+          // Yes: Return default value of field
+          return Integer.valueOf(schema.getField(lockssSolrSchemaVersionFieldName).getDefaultValue());
+        } else {
+          // No: Last resort: Check whether the schema is at version 1 based on the fields present
+          if (hasSolrField(schema, "collection", "string") &&
+              hasSolrField(schema, "auid", "string") &&
+              hasSolrField(schema, "uri", "string") &&
+              hasSolrField(schema, "committed", "boolean") &&
+              hasSolrField(schema, "storageUrl", "string") &&
+              hasSolrField(schema, "contentLength", "plong") &&
+              hasSolrField(schema, "contentDigest", "string") &&
+              hasSolrField(schema, "version", "pint") &&
+              hasSolrField(schema, "collectionDate", "long")) {
+            // Yes: The schema is at version 1.
+            return 1;
+          }
+        }
+      } finally {
+        // Shutdown the CoreContainer
+        cc.shutdown();
+      }
+
+      // Could not determine LOCKSS configuration set version
+      return 0;
+    }
+
+    /**
+     * Returns a {@code boolean} indicating whether a field by the given field name and type exists in a
+     * {@link IndexSchema}.
+     *
+     * @param schema       The {@link IndexSchema} to examine for field existence.
+     * @param fieldName    A {@link String} containing the name of the field to check.
+     * @param expectedType A {@link String} containing the expected field type.
+     * @return A {@code boolean} indicating whether a field by the given field name and type exist in this
+     * {@link IndexSchema}.
+     */
+    public static boolean hasSolrField(IndexSchema schema, String fieldName, String expectedType) {
+      FieldType actualFieldType = schema.getField(fieldName).getType();
+      return actualFieldType.getTypeName().equalsIgnoreCase(expectedType);
     }
 
     /**
@@ -1187,7 +1264,7 @@ public class SolrArtifactIndexAdmin {
      * @return An {@code int} containing the version of the configuration set.
      * @throws IOException
      */
-    public static int getLockssConfigSetVersion(SolrCore core) {
+    public static int getLockssConfigSetVersionFromSolrCore(SolrCore core) {
       Map<String, Object> userProps = core.getSolrConfig().getOverlay().getUserProps();
 
       log.trace("userProps = {}", userProps);
@@ -1329,6 +1406,7 @@ public class SolrArtifactIndexAdmin {
       LocalSolrCoreAdmin coreAdmin = null;
 
       log.trace("solrHome = {}", solrHome.toAbsolutePath());
+      log.trace("coreName = {}", coreName);
 
       CoreContainer container = CoreContainer.createAndLoad(solrHome);
 
@@ -1382,7 +1460,7 @@ public class SolrArtifactIndexAdmin {
                   .getConfigSetBaseDirectory()
                   .resolve(core.getCoreDescriptor().getConfigSet()),
 
-          getLockssConfigSetVersion(core)
+          getLockssConfigSetVersionFromSolrCore(core)
       );
     }
 
