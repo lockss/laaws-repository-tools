@@ -30,7 +30,9 @@
 
 package org.lockss.laaws.rs.index.solr;
 
+import com.ginsberg.junit.exit.ExpectSystemExitWithStatus;
 import org.apache.commons.io.FileUtils;
+import org.apache.lucene.index.IndexNotFoundException;
 import org.apache.lucene.index.SegmentInfos;
 import org.apache.lucene.util.Version;
 import org.apache.solr.client.solrj.SolrClient;
@@ -45,10 +47,12 @@ import org.apache.solr.common.SolrException;
 import org.apache.solr.core.CoreContainer;
 import org.apache.solr.core.SolrCore;
 import org.apache.solr.core.SolrXmlConfig;
-import org.junit.jupiter.api.*;
-import org.lockss.laaws.rs.io.index.solr.SolrArtifactIndex;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.lockss.laaws.rs.io.index.solr.SolrResponseErrorException;
-import org.lockss.laaws.rs.model.*;
+import org.lockss.laaws.rs.model.ArtifactSpec;
+import org.lockss.laaws.rs.model.V1Artifact;
+import org.lockss.laaws.rs.model.V2Artifact;
 import org.lockss.log.L4JLogger;
 import org.lockss.util.test.LockssTestCase5;
 
@@ -67,6 +71,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 import static org.lockss.laaws.rs.index.solr.SolrArtifactIndexAdmin.LATEST_LOCKSS_CONFIGSET_VERSION;
+import static org.lockss.laaws.rs.index.solr.SolrArtifactIndexAdmin.LocalSolrCoreAdmin.REINDEX_LOCK_FILE;
 
 public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
   private final static L4JLogger log = L4JLogger.getLogger();
@@ -262,7 +267,7 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
    */
   private void assertMinSegmentLuceneVersion(PackagedTestCore core, Version expected) throws Exception {
     // Get segment infos from core
-    SegmentInfos segInfos = getTestCoreAdmin(core).getSegmentInfos();
+    SegmentInfos segInfos = adminFromPackagedCore(core).getSegmentInfos();
 
     if (core.isPopulated() || core.isSampled()) {
       // Assert the index minimum segment version is the expected version
@@ -339,8 +344,8 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
    */
   private static void indexArtifactBean(SolrClient solrClient, Object obj) throws IOException {
     try {
-      SolrArtifactIndex.handleSolrResponse(solrClient.addBean(obj), "Problem adding artifact bean to Solr");
-      SolrArtifactIndex.handleSolrResponse(solrClient.commit(), "Problem committing addition of artifact bean to Solr");
+      SolrArtifactIndexAdmin.handleSolrResponse(solrClient.addBean(obj), "Problem adding artifact bean to Solr");
+      SolrArtifactIndexAdmin.handleSolrResponse(solrClient.commit(), "Problem committing addition of artifact bean to Solr");
     } catch (SolrResponseErrorException | SolrServerException e) {
       throw new IOException(e);
     }
@@ -351,7 +356,7 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
    * version (i.e., schema version).
    *
    * @param version A {@code int} containing the target LOCKSS configuration set version.
-   * @param spec The {@link ArtifactSpec} that will be interpreted as a versioned artifact bean.
+   * @param spec    The {@link ArtifactSpec} that will be interpreted as a versioned artifact bean.
    * @return The artifact bean {@link Object}.
    */
   private static Object getArtifactBean(int version, ArtifactSpec spec) {
@@ -400,7 +405,7 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
    *
    * @return
    */
-  private SolrArtifactIndexAdmin.LocalSolrCoreAdmin getTestCoreAdmin(PackagedTestCore core) {
+  private SolrArtifactIndexAdmin.LocalSolrCoreAdmin adminFromPackagedCore(PackagedTestCore core) {
     return SolrArtifactIndexAdmin.LocalSolrCoreAdmin.fromSolrHomeAndCoreName(solrHomePath, core.getCoreName());
   }
 
@@ -599,6 +604,17 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
 
     // Assert the core exists and has the expected version
     assertLockssConfigSetVersion(TEST_SOLR_CORE_NAME, LATEST_LOCKSS_CONFIGSET_VERSION);
+
+    try {
+      // Attempt to create the core again and assert a SolrException is thrown for the expected reason
+      SolrArtifactIndexAdmin.LocalSolrCoreAdmin.createCore(solrHomePath, TEST_SOLR_CORE_NAME);
+      fail("Expected SolrException to be thrown");
+    } catch (SolrException e) {
+      if (e.getMessage().indexOf("core is already defined") == -1) {
+        // SolrException was thrown for some reason other than the expected one - fail the test
+        fail("Unexpected SolrException: {}", e);
+      }
+    }
   }
 
   @Test
@@ -763,7 +779,7 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
   @Test
   public void testLocalSolrCoreAdmin_getSegmentInfos() throws Exception {
     for (PackagedTestCore pCore : PackagedTestCore.values()) {
-      SolrArtifactIndexAdmin.LocalSolrCoreAdmin coreAdmin = getTestCoreAdmin(pCore);
+      SolrArtifactIndexAdmin.LocalSolrCoreAdmin coreAdmin = adminFromPackagedCore(pCore);
 
       SegmentInfos segInfos = coreAdmin.getSegmentInfos();
       assertNotNull(segInfos);
@@ -792,6 +808,111 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
       assertEquals(version, coreAdmin.getLockssConfigSetVersion());
       assertLockssConfigSet(coreAdmin.configDirPath, version);
     }
+  }
+
+  @Test
+  public void testLocalSolrCoreAdmin_isCoreExists() throws Exception {
+    SolrArtifactIndexAdmin.LocalSolrCoreAdmin admin = createTestLocalSolrCoreAdmin("test", 1);
+    assertFalse(admin.isCoreExists());
+    admin.create();
+    assertTrue(admin.isCoreExists());
+  }
+
+  @Test
+  public void testLocalSolrCoreAdmin_isLuceneIndexUpgradeAvailable() throws Exception {
+    // Create new core; demonstrate it does not need an upgrade
+    SolrArtifactIndexAdmin.LocalSolrCoreAdmin admin1 =
+        createTestLocalSolrCoreAdmin("test1", 1);
+
+    assertThrows(IndexNotFoundException.class, () -> admin1.isLuceneIndexUpgradeAvailable());
+    admin1.create();
+
+    // No segments written yet; nothing to upgrade
+    assertFalse(admin1.isLuceneIndexUpgradeAvailable());
+
+    ArtifactSpec spec = ArtifactSpec.forCollAuUrl("c", "a", "u")
+        .setArtifactId("ok")
+        .setCollectionDate(0)
+        .setStorageUrl("url")
+        .generateContent()
+        .thenCommit();
+
+    // Add an artifact to the core, which will cause a segment to be written
+    try (SolrClient solrClient = startEmbeddedSolrServer(solrHomePath, admin1.getCoreName())) {
+      indexArtifactBean(solrClient, getArtifactBean(admin1.getLockssConfigSetVersion(), spec));
+    }
+
+    // Assert still no Lucene index upgrade available since latest version used
+    assertFalse(admin1.isLuceneIndexUpgradeAvailable());
+    assertEquals(SolrArtifactIndexAdmin.TARGET_LUCENE_VERSION, admin1.getSegmentInfos().getMinSegmentLuceneVersion());
+
+    // Demonstrate packaged Solr 6.x cores have a Lucene index upgrade available
+    for (PackagedTestCore core : PackagedTestCore.getCoresWithMajorVersion(6)) {
+      if (core.isPopulated() || core.isSampled()) {
+        assertTrue(adminFromPackagedCore(core).isLuceneIndexUpgradeAvailable());
+      }
+    }
+  }
+
+  @Test
+  public void testLocalSolrCoreAdmin_isLockssConfigSetUpdateAvailable() throws Exception {
+    SolrArtifactIndexAdmin.LocalSolrCoreAdmin admin1 =
+        createTestLocalSolrCoreAdmin("test1", 1);
+
+    // Core doesn't exist yet so a LOCKSS configuration set is "always available"
+    assertTrue(admin1.isLockssConfigSetUpdateAvailable());
+
+    admin1.create();
+    assertTrue(admin1.isLockssConfigSetUpdateAvailable());
+    admin1.updateConfigSet();
+    assertFalse(admin1.isLockssConfigSetUpdateAvailable());
+
+    SolrArtifactIndexAdmin.LocalSolrCoreAdmin admin2 =
+        createTestLocalSolrCoreAdmin("test2", LATEST_LOCKSS_CONFIGSET_VERSION);
+
+    // Core doesn't exist yet so a LOCKSS configuration set is "always available"
+    assertTrue(admin2.isLockssConfigSetUpdateAvailable());
+
+    admin2.create();
+    assertFalse(admin2.isLockssConfigSetUpdateAvailable());
+    admin2.updateConfigSet();
+    assertFalse(admin2.isLockssConfigSetUpdateAvailable());
+  }
+
+  @Test
+  public void testLocalSolrCoreAdmin_isReindexInProgress() throws Exception {
+    // Create a new Solr core
+    SolrArtifactIndexAdmin.LocalSolrCoreAdmin admin = createTestLocalSolrCoreAdmin("test", 1);
+    admin.create();
+
+    File reindexLockFile = admin.indexDir.resolve(REINDEX_LOCK_FILE).toFile();
+
+    // Assert no reindex in progress
+    assertFalse(admin.isReindexInProgress());
+
+    // Simulate a reindex lock acquire
+    FileUtils.touch(reindexLockFile);
+
+    // Assert reindex is in progress
+    assertTrue(admin.isReindexInProgress());
+
+    // Simulate a reindex lock release
+    FileUtils.forceDelete(reindexLockFile);
+
+    // Assert no reindex in progress
+    assertFalse(admin.isReindexInProgress());
+
+    /*
+    try (FileChannel channel = new RandomAccessFile(reindexLockFile, "rw").getChannel()) {
+      try (FileLock lock = channel.tryLock()) {
+        // Assert reindex is in progress
+        assertTrue(admin.isReindexInProgress());
+      } finally {
+        // Assert reindex is no longer in progress (i.e., reindex finished)
+        assertFalse(admin.isReindexInProgress());
+      }
+    }
+    */
   }
 
   /**
@@ -975,7 +1096,7 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
       }
 
       // Get LocalSolrCoreAdmin of packaged test core
-      SolrArtifactIndexAdmin.LocalSolrCoreAdmin coreAdmin = getTestCoreAdmin(pCore);
+      SolrArtifactIndexAdmin.LocalSolrCoreAdmin coreAdmin = adminFromPackagedCore(pCore);
       assertNotNull(coreAdmin);
 
       // Assert current configuration set version matches expected
@@ -1006,7 +1127,7 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
       assertMinSegmentLuceneVersion(pCore, pCore.getSolrVersion());
 
       // Upgrade the core's Lucene index
-      SolrArtifactIndexAdmin.LocalSolrCoreAdmin coreAdmin = getTestCoreAdmin(pCore);
+      SolrArtifactIndexAdmin.LocalSolrCoreAdmin coreAdmin = adminFromPackagedCore(pCore);
       assertNotNull(coreAdmin);
       coreAdmin.updateLuceneIndex();
 
@@ -1032,6 +1153,15 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
   }
 
   @Test
+  @ExpectSystemExitWithStatus(1)
+  public void testMain_createLocalCore_failCreateTwice() throws Exception {
+    // Create a new Solr core
+    String[] args = {"--action", "create", "--local", solrHomePath.toString(), "--core", "test"};
+    SolrArtifactIndexAdmin.main(args);
+    SolrArtifactIndexAdmin.main(args);
+  }
+
+  @Test
   public void testMain_updateLocalCores() throws Exception {
     // Update existing Solr cores
     for (PackagedTestCore pCore : PackagedTestCore.values()) {
@@ -1043,7 +1173,7 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
       SolrArtifactIndexAdmin.main(args);
 
       // Assert update
-      SolrArtifactIndexAdmin.LocalSolrCoreAdmin admin = getTestCoreAdmin(pCore);
+      SolrArtifactIndexAdmin.LocalSolrCoreAdmin admin = adminFromPackagedCore(pCore);
 
       // Get the LOCKSS configuration set version and assert it is latest
       assertEquals(LATEST_LOCKSS_CONFIGSET_VERSION, admin.getLockssConfigSetVersion());
@@ -1057,6 +1187,82 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
         assertNull(admin.getSegmentInfos().getMinSegmentLuceneVersion());
       }
     }
+  }
+
+  @Test
+  public void testMain_verifyLocalCore_success() throws Exception {
+    String[] argsCreate = {"--action", "create", "--local", solrHomePath.toString(), "--core", "test"};
+    String[] argsVerify = {"--action", "verify", "--local", solrHomePath.toString(), "--core", "test"};
+
+    SolrArtifactIndexAdmin.main(argsCreate);
+    SolrArtifactIndexAdmin.main(argsVerify);
+  }
+
+  @Test
+  @ExpectSystemExitWithStatus(1)
+  public void testMain_verifyLocalCore_coreMissing() throws Exception {
+    String[] argsVerify = {"--action", "verify", "--local", solrHomePath.toString(), "--core", "test"};
+    SolrArtifactIndexAdmin.main(argsVerify);
+  }
+
+  @Test
+  @ExpectSystemExitWithStatus(1)
+  public void testMain_verifyLocalCore_luceneIndexUpgradeNeeded() throws Exception {
+    PackagedTestCore core = PackagedTestCore.SOLR6_POPULATED_V1;
+    String[] argsVerify = {"--action", "verify", "--local", solrHomePath.toString(), "--core", core.getCoreName()};
+    SolrArtifactIndexAdmin.main(argsVerify);
+  }
+
+  @Test
+  @ExpectSystemExitWithStatus(1)
+  public void testMain_verifyLocalCore_lockssConfigSetUpdateNeeded() throws Exception {
+    PackagedTestCore core = PackagedTestCore.SOLR6_POPULATED_V1;
+    String[] argsVerify = {"--action", "verify", "--local", solrHomePath.toString(), "--core", core.getCoreName()};
+    SolrArtifactIndexAdmin.main(argsVerify);
+  }
+
+  @Test
+  @ExpectSystemExitWithStatus(1)
+  public void testMain_verifyLocalCore_reindexInProgress() throws Exception {
+    // Create a new Solr core
+    SolrArtifactIndexAdmin.LocalSolrCoreAdmin admin = createTestLocalSolrCoreAdmin("test", 1);
+    admin.create();
+
+    File reindexLockFile = admin.indexDir.resolve(REINDEX_LOCK_FILE).toFile();
+
+    // Assert no reindex in progress
+    assertFalse(admin.isReindexInProgress());
+
+    // Simulate a reindex lock
+    FileUtils.touch(reindexLockFile);
+
+    try {
+      // Assert reindex is in progress
+      assertTrue(admin.isReindexInProgress());
+
+      // Call verify (which should call System.exit(1))
+      String[] args = {"--action", "verify", "--local", solrHomePath.toString(), "--core", admin.getCoreName()};
+      SolrArtifactIndexAdmin.main(args);
+    } finally {
+      // Assert reindex is still in progress (interrupted)
+      assertTrue(admin.isReindexInProgress());
+    }
+
+    /*
+    try (FileChannel channel = new RandomAccessFile(reindexLockFile, "rw").getChannel()) {
+      try (FileLock lock = channel.tryLock()) {
+        // Assert reindex is in progress
+        assertTrue(admin.isReindexInProgress());
+
+        // Call verify (which should call System.exit(1))
+        String[] args = {"--action", "verify", "--local", solrHomePath.toString(), "--core", admin.getCoreName()};
+        SolrArtifactIndexAdmin.main(args);
+      } finally {
+        // Assert reindex is still in progress (interrupted)
+        assertTrue(admin.isReindexInProgress());
+      }
+    }
+    */
   }
 
   // TESTS: Common /////////////////////////////////////////////////////////////////////////////////////////////////////

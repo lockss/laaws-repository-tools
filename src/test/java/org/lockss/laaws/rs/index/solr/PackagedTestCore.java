@@ -221,8 +221,8 @@ public enum PackagedTestCore {
 
   public static void indexArtifact(SolrClient solrClient, Object obj) throws IOException {
     try {
-      SolrArtifactIndex.handleSolrResponse(solrClient.addBean(obj), "Problem adding artifact bean to Solr");
-      SolrArtifactIndex.handleSolrResponse(solrClient.commit(), "Problem committing addition of artifact bean to Solr");
+      SolrArtifactIndexAdmin.handleSolrResponse(solrClient.addBean(obj), "Problem adding artifact bean to Solr");
+      SolrArtifactIndexAdmin.handleSolrResponse(solrClient.commit(), "Problem committing addition of artifact bean to Solr");
     } catch (SolrResponseErrorException | SolrServerException e) {
       throw new IOException(e);
     }

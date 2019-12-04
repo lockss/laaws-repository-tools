@@ -116,7 +116,8 @@ public class WARCImporter {
    *          WARC file.
    */
   public WARCImporter(URL url, String collection, String auid) {
-    this(new RestLockssRepository(url), collection, auid);
+    // TODO: Pass username and password
+    this(new RestLockssRepository(url, null, null), collection, auid);
   }
 
   /**

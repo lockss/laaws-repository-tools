@@ -30,12 +30,16 @@
 
 package org.lockss.laaws.rs.index.solr;
 
-import org.apache.commons.cli.*;
+import org.apache.commons.cli.CommandLine;
+import org.apache.commons.cli.Options;
+import org.apache.commons.cli.ParseException;
+import org.apache.commons.cli.PosixParser;
 import org.apache.commons.collections4.IteratorUtils;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.lucene.index.*;
+import org.apache.lucene.index.IndexUpgrader;
+import org.apache.lucene.index.SegmentInfos;
 import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.util.Version;
 import org.apache.solr.client.solrj.SolrClient;
@@ -51,10 +55,13 @@ import org.apache.solr.client.solrj.request.schema.SchemaRequest;
 import org.apache.solr.client.solrj.response.CoreAdminResponse;
 import org.apache.solr.client.solrj.response.SolrResponseBase;
 import org.apache.solr.client.solrj.response.schema.SchemaResponse;
+import org.apache.solr.common.SolrException;
 import org.apache.solr.common.SolrInputDocument;
 import org.apache.solr.common.cloud.SolrZkClient;
 import org.apache.solr.common.util.NamedList;
-import org.apache.solr.core.*;
+import org.apache.solr.core.CoreContainer;
+import org.apache.solr.core.SolrCore;
+import org.apache.solr.core.SolrXmlConfig;
 import org.apache.solr.schema.FieldType;
 import org.apache.solr.schema.IndexSchema;
 import org.json.JSONObject;
@@ -76,6 +83,11 @@ import java.util.stream.Collectors;
 
 public class SolrArtifactIndexAdmin {
   private final static L4JLogger log = L4JLogger.getLogger();
+
+  /**
+   * Default Solr core name for SolrArtifactIndex implementations.
+   */
+  public static final String DEFAULT_SOLRCORE_NAME = "lockss";
 
   /**
    * Latest version of the LOCKSS configuration set for {@link SolrArtifactIndex}.
@@ -1019,6 +1031,99 @@ public class SolrArtifactIndexAdmin {
     }
 
     /**
+     * Convenience method. Returns a {@code boolean} indicating whether this Solr core has an update available for its
+     * Lucene index and segments, or its LOCKSS configuration set.
+     *
+     * @return A {@code boolean} indicating whether this Solr core has an update available for its Lucene index and
+     * segments, or its LOCKSS configuration set.
+     */
+    public boolean isUpdateAvailable() throws IOException {
+      return isLuceneIndexUpgradeAvailable() || isLockssConfigSetUpdateAvailable();
+    }
+
+    /**
+     * Returns a {@code boolean} indicating whether the Solr core exists on disk under the Solr home base directory.
+     * Uses a {@link CoreContainer} to discover Solr cores under the Solr home path.
+     *
+     * @return A {@code boolean} indicating whether the Solr core exists under the Solr home base directory.
+     */
+    public boolean isCoreExists() {
+      CoreContainer container = CoreContainer.createAndLoad(solrHome);
+
+      try {
+        return container.getAllCoreNames().contains(solrCoreName);
+      } finally {
+        container.shutdown();
+      }
+    }
+
+    /**
+     * Returns a {@code boolean} indicating whether an upgrade is available for the Lucene index (and its segments) in
+     * this core. Determined by comparing its oldest segment version with the target version.
+     *
+     * @return A {@code boolean} indicating whether the oldest segment in the Lucene index is below the target version.
+     * @throws IOException Thrown if an error occurred while reading the core's Lucene segments.
+     */
+    public boolean isLuceneIndexUpgradeAvailable() throws IOException {
+      // Get the minimum version of all the committed segments in this Lucene index
+      SegmentInfos segInfos = getSegmentInfos();
+
+      log.trace("segInfos.size() = {}", segInfos.size());
+
+      // Index must have at least one segment
+      if (segInfos.size() > 0) {
+        // Get version of the oldest segment in this index
+        Version minSegVersion = segInfos.getMinSegmentLuceneVersion();
+
+        log.trace("minSegVersion = {}, targetVersion = {}", minSegVersion, TARGET_LUCENE_VERSION);
+
+        return !minSegVersion.onOrAfter(TARGET_LUCENE_VERSION);
+      } else {
+        log.trace("Index contains no segments");
+      }
+
+      return false;
+    }
+
+    /**
+     * Returns a {@code boolean} indicating whether a new LOCKSS configuration set is available for this core.
+     * Determined by comparing the current LOCKSS configuration set version with the latest version.
+     * See {@link LocalSolrCoreAdmin#getLockssConfigSetVersion()} for details.
+     *
+     * @return Returns a {@code boolean} indicating whether a new LOCKSS configuration set is available for this core.
+     * @throws IOException Thrown if an error occurs while attempting to read the Solr Configuration Overlay file.
+     */
+    public boolean isLockssConfigSetUpdateAvailable() throws IOException {
+      return getLockssConfigSetVersion() < LATEST_LOCKSS_CONFIGSET_VERSION;
+    }
+
+    /**
+     * Returns a {@code boolean} indicating whether a reindex is in progress. Determined by whether the reindex lockfile
+     * is present in this core.
+     *
+     * This *not* thread-safe!
+     *
+     * @return Returns a {@code boolean} indicating whether a reindex is in progress.
+     */
+    public boolean isReindexInProgress() throws IOException {
+      File reindexLockFile = indexDir.resolve(REINDEX_LOCK_FILE).toFile();
+      return reindexLockFile.exists();
+
+      /*
+      try (FileChannel channel = new RandomAccessFile(reindexLockFile, "rw").getChannel()) {
+        try (FileLock lock = channel.tryLock()) {
+          // Acquired lock: No reindex was in progress
+          return false;
+        } catch (OverlappingFileLockException e) {
+          // Another thread has the lock
+          log.trace("Could not acquire lock");
+          return true;
+        }
+      }
+      */
+    }
+
+    /**
      * Applies schema updates to this Solr core using the Schema API through SolrJ.
      */
     @Deprecated
@@ -1039,27 +1144,8 @@ public class SolrArtifactIndexAdmin {
      * @throws IOException
      */
     public void updateLuceneIndex() throws IOException {
-      // Get the minimum version of all the committed segments in this Lucene index
-      SegmentInfos segInfos = getSegmentInfos();
-
-      log.trace("segInfos.size() = {}", segInfos.size());
-
-      // Index must have at least one segment
-      if (segInfos.size() > 0) {
-        // Get minimum version among segments
-        Version minSegVersion = segInfos.getMinSegmentLuceneVersion();
-
-        log.trace("minSegVersion = {}", minSegVersion);
-
-        // Run the IndexUpgrader tool if the minimum version is not on or after the latest version
-        if (!minSegVersion.onOrAfter(TARGET_LUCENE_VERSION)) {
-          log.trace("Running IndexUpgrader [minVersion: {}, latestVersion: {}]", minSegVersion, Version.LATEST);
-          new IndexUpgrader(FSDirectory.open(indexDir)).upgrade();
-        } else {
-          log.trace("IndexUpgrader not necessary [minVersion: {}, latestVersion: {}]", minSegVersion, Version.LATEST);
-        }
-      } else {
-        log.debug2("No segments to upgrade");
+      if (isLuceneIndexUpgradeAvailable()) {
+        new IndexUpgrader(FSDirectory.open(indexDir)).upgrade();
       }
     }
 
@@ -1086,6 +1172,10 @@ public class SolrArtifactIndexAdmin {
      * @throws SolrServerException
      */
     public void updateConfigSet() throws IOException, SolrResponseErrorException, SolrServerException {
+      if (!isLockssConfigSetUpdateAvailable()) {
+        log.trace("Already at latest; nothing to do");
+        return;
+      }
 
       int targetVersion = LATEST_LOCKSS_CONFIGSET_VERSION;
 
@@ -1096,11 +1186,6 @@ public class SolrArtifactIndexAdmin {
 
       log.trace("currentVersion = {}", lockssConfigSetVersion);
       log.trace("targetVersion = {}", targetVersion);
-
-      if (lockssConfigSetVersion == targetVersion) {
-        log.trace("Already at latest; nothing to do");
-        return;
-      }
 
       // Retire the existing, production configuration set
       retireConfigSet();
@@ -1117,7 +1202,19 @@ public class SolrArtifactIndexAdmin {
         // Perform post-installation tasks. We start/stop the server each iteration to avoid config sets changing from
         // under the embedded Solr server and causing unpredictable behavior.
         try (EmbeddedSolrServer solrClient = new EmbeddedSolrServer(solrHome, solrCoreName)) {
+
+          File reindexLockFile = indexDir.resolve(REINDEX_LOCK_FILE).toFile();
+
+          FileUtils.touch(reindexLockFile);
           SolrArtifactIndexReindex.reindexArtifactsForVersion(solrClient, version + 1);
+          FileUtils.forceDelete(reindexLockFile);
+
+//          try (FileChannel channel = new RandomAccessFile(reindexLockFile, "rw").getChannel()) {
+//            try (FileLock lock = channel.tryLock()) {
+//              SolrArtifactIndexReindex.reindexArtifactsForVersion(solrClient, version + 1);
+//            }
+//          }
+
         } catch (SolrServerException | SolrResponseErrorException e) {
           log.error(
               "Caught an exception while attempting to reindex artifacts for target version [version: {}]: {}",
@@ -1131,6 +1228,8 @@ public class SolrArtifactIndexAdmin {
         lockssConfigSetVersion++;
       }
     }
+
+    public static final String REINDEX_LOCK_FILE = "reindex.lock";
 
     /**
      * Determines the version of the LOCKSS Solr configuration set in this core by reading its configuration overlay
@@ -1204,11 +1303,16 @@ public class SolrArtifactIndexAdmin {
      * @throws IOException
      */
     @Deprecated
-    public static int getLockssConfigSetVersionFromField(Path solrHome, String coreName) throws IOException {
+    public static int getLockssConfigSetVersionFromField(Path solrHome, String coreName) {
       // Get a CoreContainer contain cores from the Solr home base path
       CoreContainer cc = CoreContainer.createAndLoad(solrHome);
 
       try (SolrCore core = cc.getCore(coreName)) {
+        if (core == null) {
+          // Cannot determine config set version (core not found)
+          return -1;
+        }
+
         // Get index schema
         IndexSchema schema = core.getLatestSchema();
 
@@ -1236,7 +1340,7 @@ public class SolrArtifactIndexAdmin {
       }
 
       // Could not determine LOCKSS configuration set version
-      return 0;
+      return -1;
     }
 
     /**
@@ -1333,15 +1437,17 @@ public class SolrArtifactIndexAdmin {
       String baseFileName = String.format("%s.", targetPath.getFileName());
       String[] allSiblingNames = targetPath.getParent().toFile().list();
 
-      OptionalInt optMaxStep = Arrays.stream(allSiblingNames)
-          .filter(name -> name.startsWith(baseFileName))
-          .map(name -> name.substring(baseFileName.length()))
-          .filter(StringUtils::isNumeric)
-          .mapToInt(Integer::parseInt)
-          .max();
+      if (allSiblingNames != null) {
+        OptionalInt optMaxStep = Arrays.stream(allSiblingNames)
+            .filter(name -> name.startsWith(baseFileName))
+            .map(name -> name.substring(baseFileName.length()))
+            .filter(StringUtils::isNumeric)
+            .mapToInt(Integer::parseInt)
+            .max();
 
-      if (optMaxStep.isPresent()) {
-        return optMaxStep.getAsInt();
+        if (optMaxStep.isPresent()) {
+          return optMaxStep.getAsInt();
+        }
       }
 
       // Return 0 to indicate the target exists but it has no stepped siblings; -1 to indicate the target does not exist
@@ -1484,6 +1590,10 @@ public class SolrArtifactIndexAdmin {
     public int hashCode() {
       return Objects.hash(solrCoreName, solrHome, instanceDir, configDirPath, dataDir, indexDir, sharedConfigSetName, sharedConfigSetBaseDir, lockssConfigSetVersion);
     }
+
+    public String getCoreName() {
+      return this.solrCoreName;
+    }
   }
 
   // SOLR CLOUD ////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1611,7 +1721,7 @@ public class SolrArtifactIndexAdmin {
     // Define command-line options
     Options options = new Options();
 
-    options.addOption(null, KEY_ACTION, true, "Action to perform (create or upgrade)");
+    options.addOption(null, KEY_ACTION, true, "Action to perform (create, update or verify)");
 
     // Local
     options.addOption(null, KEY_CORE, true, "Name of Solr core");
@@ -1636,17 +1746,44 @@ public class SolrArtifactIndexAdmin {
 
       // Determine name of Solr core to update (or use the default)
       String coreName = cmd.hasOption(KEY_CORE) ?
-          cmd.getOptionValue(KEY_CORE) : SolrArtifactIndex.DEFAULT_SOLRCORE_NAME;
+          cmd.getOptionValue(KEY_CORE) : DEFAULT_SOLRCORE_NAME;
 
       switch (cmd.getOptionValue(KEY_ACTION)) {
         case "create":
-          LocalSolrCoreAdmin.createCore(Paths.get(cmd.getOptionValue(KEY_LOCAL)), coreName);
+          try {
+            LocalSolrCoreAdmin.createCore(Paths.get(cmd.getOptionValue(KEY_LOCAL)), coreName);
+          } catch (SolrException e) {
+            if (e.getMessage().indexOf("already exists") != -1) {
+              log.error("Core already exists");
+              System.exit(1);
+            }
+
+            // Unknown SolrException
+            throw e;
+          }
           break;
 
         case "update":
           // Update the local Solr core
-          LocalSolrCoreAdmin updater = LocalSolrCoreAdmin.fromSolrHomeAndCoreName(solrHome, coreName);
-          updater.update();
+          LocalSolrCoreAdmin admin1 = LocalSolrCoreAdmin.fromSolrHomeAndCoreName(solrHome, coreName);
+          admin1.update();
+          break;
+
+        case "verify":
+          LocalSolrCoreAdmin admin2 = LocalSolrCoreAdmin.fromSolrHomeAndCoreName(solrHome, coreName);
+
+          if (admin2 != null) {
+            // Core exists: Verify successful upgrade should fail if the core has an update available, or if the core is
+            //              in the middle of a reindex.
+            if (admin2.isUpdateAvailable() || admin2.isReindexInProgress()) {
+              System.exit(1);
+            }
+          } else {
+            // Core not found
+            log.error("Core not found!");
+            System.exit(1);
+          }
+
           break;
 
         default:
@@ -1666,7 +1803,7 @@ public class SolrArtifactIndexAdmin {
 
         // Determine name of Solr collection to update (or use the default)
         String collection = cmd.hasOption(KEY_COLLECTION) ?
-            cmd.getOptionValue(KEY_COLLECTION) : SolrArtifactIndex.DEFAULT_SOLRCORE_NAME;
+            cmd.getOptionValue(KEY_COLLECTION) : DEFAULT_SOLRCORE_NAME;
 
         // Set default Solr Cloud client collection
         cloudClient.setDefaultCollection(collection);
