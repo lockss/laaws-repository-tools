@@ -1190,6 +1190,7 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
   }
 
   @Test
+  @ExpectSystemExitWithStatus(0)
   public void testMain_verifyLocalCore_success() throws Exception {
     String[] argsCreate = {"--action", "create", "--local", solrHomePath.toString(), "--core", "test"};
     String[] argsVerify = {"--action", "verify", "--local", solrHomePath.toString(), "--core", "test"};
@@ -1206,7 +1207,7 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
   }
 
   @Test
-  @ExpectSystemExitWithStatus(1)
+  @ExpectSystemExitWithStatus(2)
   public void testMain_verifyLocalCore_luceneIndexUpgradeNeeded() throws Exception {
     PackagedTestCore core = PackagedTestCore.SOLR6_POPULATED_V1;
     String[] argsVerify = {"--action", "verify", "--local", solrHomePath.toString(), "--core", core.getCoreName()};
@@ -1214,7 +1215,7 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
   }
 
   @Test
-  @ExpectSystemExitWithStatus(1)
+  @ExpectSystemExitWithStatus(2)
   public void testMain_verifyLocalCore_lockssConfigSetUpdateNeeded() throws Exception {
     PackagedTestCore core = PackagedTestCore.SOLR6_POPULATED_V1;
     String[] argsVerify = {"--action", "verify", "--local", solrHomePath.toString(), "--core", core.getCoreName()};
@@ -1222,7 +1223,7 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
   }
 
   @Test
-  @ExpectSystemExitWithStatus(1)
+  @ExpectSystemExitWithStatus(4)
   public void testMain_verifyLocalCore_reindexInProgress() throws Exception {
     // Create a new Solr core
     SolrArtifactIndexAdmin.LocalSolrCoreAdmin admin = createTestLocalSolrCoreAdmin("test", 1);

@@ -1100,7 +1100,7 @@ public class SolrArtifactIndexAdmin {
     /**
      * Returns a {@code boolean} indicating whether a reindex is in progress. Determined by whether the reindex lockfile
      * is present in this core.
-     *
+     * <p>
      * This *not* thread-safe!
      *
      * @return Returns a {@code boolean} indicating whether a reindex is in progress.
@@ -1770,13 +1770,24 @@ public class SolrArtifactIndexAdmin {
           break;
 
         case "verify":
+          /*
+          Exit codes:
+          0 = Solr core is up-to-date
+          1 = Solr core is missing
+          2 = Solr core needs an update (Lucene index or LOCKSS configuration set)
+          4 = Solr core reindex is in-progress
+          */
           LocalSolrCoreAdmin admin2 = LocalSolrCoreAdmin.fromSolrHomeAndCoreName(solrHome, coreName);
 
           if (admin2 != null) {
+            if (admin2.isReindexInProgress()) {
+              System.exit(4);
+            }
+
             // Core exists: Verify successful upgrade should fail if the core has an update available, or if the core is
             //              in the middle of a reindex.
-            if (admin2.isUpdateAvailable() || admin2.isReindexInProgress()) {
-              System.exit(1);
+            if (admin2.isUpdateAvailable()) {
+              System.exit(2);
             }
           } else {
             // Core not found
@@ -1784,6 +1795,7 @@ public class SolrArtifactIndexAdmin {
             System.exit(1);
           }
 
+          System.exit(0);
           break;
 
         default:
