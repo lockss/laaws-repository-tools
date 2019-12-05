@@ -177,7 +177,8 @@ POSSIBILITY OF SUCH DAMAGE.
               <goal>shade</goal>
             </goals>
             <configuration>
-              <minimizeJar>true</minimizeJar>
+              <!-- TODO Minimize operation is too aggressive so this is disabled for now -->
+<!--              <minimizeJar>true</minimizeJar>-->
               <filters>
                 <filter>
                   <artifact>*:*</artifact>
