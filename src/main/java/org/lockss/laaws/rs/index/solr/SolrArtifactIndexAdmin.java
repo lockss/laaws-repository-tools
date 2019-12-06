@@ -1328,8 +1328,8 @@ public class SolrArtifactIndexAdmin {
               hasSolrField(schema, "storageUrl", "string") &&
               hasSolrField(schema, "contentLength", "plong") &&
               hasSolrField(schema, "contentDigest", "string") &&
-              hasSolrField(schema, "version", "pint") &&
-              hasSolrField(schema, "collectionDate", "long")) {
+              hasSolrField(schema, "version", "pint")) {
+//              hasSolrField(schema, "collectionDate", "long")) {
             // Yes: The schema is at version 1.
             return 1;
           }
