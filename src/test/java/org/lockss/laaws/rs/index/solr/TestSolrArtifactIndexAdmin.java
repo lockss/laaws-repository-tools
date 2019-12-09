@@ -59,6 +59,8 @@ import org.lockss.util.test.LockssTestCase5;
 import java.io.*;
 import java.lang.reflect.Method;
 import java.net.URL;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -72,6 +74,7 @@ import java.util.stream.Collectors;
 
 import static org.lockss.laaws.rs.index.solr.SolrArtifactIndexAdmin.LATEST_LOCKSS_CONFIGSET_VERSION;
 import static org.lockss.laaws.rs.index.solr.SolrArtifactIndexAdmin.LocalSolrCoreAdmin.REINDEX_LOCK_FILE;
+import static org.lockss.laaws.rs.index.solr.SolrArtifactIndexAdmin.LocalSolrCoreAdmin.UPGRADE_LOCK_FILE;
 
 public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
   private final static L4JLogger log = L4JLogger.getLogger();
@@ -1142,6 +1145,7 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
   // TESTS: main(...) //////////////////////////////////////////////////////////////////////////////////////////////////
 
   @Test
+  @ExpectSystemExitWithStatus(0)
   public void testMain_createLocalCore() throws Exception {
     // Create a new Solr core
     String[] args = {"--action", "create", "--local", solrHomePath.toString(), "--core", "test"};
@@ -1152,16 +1156,21 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
     assertLockssConfigSet(solrHomePath.resolve("lockss/cores/test/conf"), LATEST_LOCKSS_CONFIGSET_VERSION);
   }
 
+  /**
+   * Assert that calling create core on a core that already exists is a no-op.
+   *
+   * @throws Exception
+   */
   @Test
-  @ExpectSystemExitWithStatus(1)
-  public void testMain_createLocalCore_failCreateTwice() throws Exception {
-    // Create a new Solr core
+  @ExpectSystemExitWithStatus(0)
+  public void testMain_createLocalCore_createTwice() throws Exception {
     String[] args = {"--action", "create", "--local", solrHomePath.toString(), "--core", "test"};
     SolrArtifactIndexAdmin.main(args);
     SolrArtifactIndexAdmin.main(args);
   }
 
   @Test
+  @ExpectSystemExitWithStatus(0)
   public void testMain_updateLocalCores() throws Exception {
     // Update existing Solr cores
     for (PackagedTestCore pCore : PackagedTestCore.values()) {
@@ -1224,46 +1233,66 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
 
   @Test
   @ExpectSystemExitWithStatus(4)
-  public void testMain_verifyLocalCore_reindexInProgress() throws Exception {
+  public void testMain_verifyLocalCore_updateInProgress() throws Exception {
     // Create a new Solr core
     SolrArtifactIndexAdmin.LocalSolrCoreAdmin admin = createTestLocalSolrCoreAdmin("test", 1);
     admin.create();
 
+    // Lock files
+    File reindexLockFile = admin.indexDir.resolve(REINDEX_LOCK_FILE).toFile();
+    File upgradeLockFile = admin.indexDir.resolve(UPGRADE_LOCK_FILE).toFile();
+
+    log.trace("reindexLockFile = {}", reindexLockFile);
+    log.trace("upgradeLockFile = {}", upgradeLockFile);
+
+    // Simulate an update lock
+    try (FileChannel channel = new RandomAccessFile(upgradeLockFile, "rw").getChannel()) {
+      try (FileLock updateLock = channel.tryLock()) {
+
+        // Simulate a reindex lock
+        FileUtils.touch(reindexLockFile);
+
+        // Assert reindex is in progress within an update
+        assertTrue(admin.isUpdateInProgress());
+        assertTrue(admin.isReindexInProgress());
+
+        // Call verify (which should call System.exit(4))
+        String[] args = {"--action", "verify", "--local", solrHomePath.toString(), "--core", admin.getCoreName()};
+        SolrArtifactIndexAdmin.main(args);
+      }
+    }
+  }
+
+  @Test
+  @ExpectSystemExitWithStatus(8)
+  public void testMain_verifyLocalCore_reindexInterrupted() throws Exception {
+    // Create a new Solr core
+    SolrArtifactIndexAdmin.LocalSolrCoreAdmin admin = createTestLocalSolrCoreAdmin("test", 1);
+    admin.create();
+
+    // Lock file
     File reindexLockFile = admin.indexDir.resolve(REINDEX_LOCK_FILE).toFile();
 
     // Assert no reindex in progress
+    assertFalse(admin.isUpdateInProgress());
     assertFalse(admin.isReindexInProgress());
 
     // Simulate a reindex lock
     FileUtils.touch(reindexLockFile);
 
-    try {
-      // Assert reindex is in progress
-      assertTrue(admin.isReindexInProgress());
+    // Assert reindex is in progress but not an update
+    assertFalse(admin.isUpdateInProgress());
+    assertTrue(admin.isReindexInProgress());
 
+    try {
       // Call verify (which should call System.exit(1))
       String[] args = {"--action", "verify", "--local", solrHomePath.toString(), "--core", admin.getCoreName()};
       SolrArtifactIndexAdmin.main(args);
     } finally {
       // Assert reindex is still in progress (interrupted)
+      assertFalse(admin.isUpdateInProgress());
       assertTrue(admin.isReindexInProgress());
     }
-
-    /*
-    try (FileChannel channel = new RandomAccessFile(reindexLockFile, "rw").getChannel()) {
-      try (FileLock lock = channel.tryLock()) {
-        // Assert reindex is in progress
-        assertTrue(admin.isReindexInProgress());
-
-        // Call verify (which should call System.exit(1))
-        String[] args = {"--action", "verify", "--local", solrHomePath.toString(), "--core", admin.getCoreName()};
-        SolrArtifactIndexAdmin.main(args);
-      } finally {
-        // Assert reindex is still in progress (interrupted)
-        assertTrue(admin.isReindexInProgress());
-      }
-    }
-    */
   }
 
   // TESTS: Common /////////////////////////////////////////////////////////////////////////////////////////////////////

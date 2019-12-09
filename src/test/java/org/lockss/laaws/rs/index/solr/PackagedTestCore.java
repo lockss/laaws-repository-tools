@@ -67,6 +67,7 @@ public enum PackagedTestCore {
 
   // Cores from sullockss-laaws-dev-02 and sullockss-laaws-dev-04
 //  LOCKSS_DEV2_20191115("dev2.lockss-repo.20191115", Version.fromBits(6, 6, 5), 1, true, false),
+//  LOCKSS_DEV3_20191205("dev3.lockss-repo.20191205", Version.fromBits(6, 6, 5), 1, true, false),
 //  LOCKSS_DEV4_20190829("dev4.lockss-repo.20190829", Version.fromBits(6, 6, 5), 2, true, false),
 //  LOCKSS_DEV4_20190909("dev4.lockss-repo.20190909", Version.fromBits(7, 2, 1), 2, true, false);
 

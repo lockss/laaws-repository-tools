@@ -74,6 +74,9 @@ import org.lockss.util.io.FileUtil;
 
 import java.io.*;
 import java.net.URL;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
+import java.nio.channels.OverlappingFileLockException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
@@ -1019,14 +1022,17 @@ public class SolrArtifactIndexAdmin {
     /**
      * Performs all steps necessary to bring the underlying Solr core up-to-date.
      */
-    public void update() {
-      try {
-        updateLuceneIndex();
-        updateConfigSet();
-//      applySchemaUpdates();
-      } catch (IOException | SolrResponseErrorException | SolrServerException e) {
-        log.error("Caught exception while attempting to upgrade Solr core [core: " + solrCoreName + "]");
-        // TODO better error handling
+    public void update() throws IOException, SolrResponseErrorException, SolrServerException {
+      File reindexLockFile = indexDir.resolve(UPGRADE_LOCK_FILE).toFile();
+
+      try (FileChannel channel = new RandomAccessFile(reindexLockFile, "rw").getChannel()) {
+        try (FileLock lock = channel.tryLock()) {
+          updateLuceneIndex();
+          updateConfigSet();
+        } catch (OverlappingFileLockException e) {
+          // Another thread has the lock
+          log.info("An update is already in progress");
+        }
       }
     }
 
@@ -1098,6 +1104,29 @@ public class SolrArtifactIndexAdmin {
     }
 
     /**
+     * Returns a {@code boolean} indicating whether an update is in progress for this core. Determined by whether we're
+     * able to acquire the update lock at a given instance.
+     *
+     * @return Returns a {@code boolean} indicating whether an update is in progress.
+     * @throws IOException Thrown if there were I/O problems with the lock file.
+     */
+    public boolean isUpdateInProgress() throws IOException {
+      File lockfile = indexDir.resolve(UPGRADE_LOCK_FILE).toFile();
+
+      log.trace("lockfile = {}", lockfile);
+
+      try (FileChannel channel = new RandomAccessFile(lockfile, "rw").getChannel()) {
+        try (FileLock lock = channel.tryLock()) {
+          // Acquired lock - an update was not in progress in another thread
+          return false;
+        } catch (OverlappingFileLockException e) {
+          // Could not acquire lock - we interpret this to mean another thread is running the update
+          return true;
+        }
+      }
+    }
+
+    /**
      * Returns a {@code boolean} indicating whether a reindex is in progress. Determined by whether the reindex lockfile
      * is present in this core.
      * <p>
@@ -1108,19 +1137,6 @@ public class SolrArtifactIndexAdmin {
     public boolean isReindexInProgress() throws IOException {
       File reindexLockFile = indexDir.resolve(REINDEX_LOCK_FILE).toFile();
       return reindexLockFile.exists();
-
-      /*
-      try (FileChannel channel = new RandomAccessFile(reindexLockFile, "rw").getChannel()) {
-        try (FileLock lock = channel.tryLock()) {
-          // Acquired lock: No reindex was in progress
-          return false;
-        } catch (OverlappingFileLockException e) {
-          // Another thread has the lock
-          log.trace("Could not acquire lock");
-          return true;
-        }
-      }
-      */
     }
 
     /**
@@ -1205,9 +1221,16 @@ public class SolrArtifactIndexAdmin {
 
           File reindexLockFile = indexDir.resolve(REINDEX_LOCK_FILE).toFile();
 
-          FileUtils.touch(reindexLockFile);
-          SolrArtifactIndexReindex.reindexArtifactsForVersion(solrClient, version + 1);
-          FileUtils.forceDelete(reindexLockFile);
+          if (!reindexLockFile.exists()) {
+            // Acquired reindex lock
+            FileUtils.touch(reindexLockFile);
+            SolrArtifactIndexReindex.reindexArtifactsForVersion(solrClient, version + 1);
+            FileUtils.forceDelete(reindexLockFile);
+          } else {
+            // Could not acquire reindex lock (reindex lock file already exists)
+            log.trace("Reindex is already in progress");
+            return;
+          }
 
 //          try (FileChannel channel = new RandomAccessFile(reindexLockFile, "rw").getChannel()) {
 //            try (FileLock lock = channel.tryLock()) {
@@ -1229,6 +1252,7 @@ public class SolrArtifactIndexAdmin {
       }
     }
 
+    public static final String UPGRADE_LOCK_FILE = "upgrade.lock";
     public static final String REINDEX_LOCK_FILE = "reindex.lock";
 
     /**
@@ -1716,25 +1740,30 @@ public class SolrArtifactIndexAdmin {
   public static final String KEY_CLOUD = "cloud";
   public static final String KEY_ZKHOST = "zkHost";
 
-  public static void main(String[] args) throws ParseException, IOException, SolrResponseErrorException, SolrServerException {
+  private enum AdminExitCode {
+    OK(0),
+    MISSING_CORE(1),
+    UPDATE_NEEDED(2),
+    UPDATE_INPROGRESS(4),
+    UPDATE_FAILURE(8),
+    ERROR(Integer.MAX_VALUE);
 
-    // Define command-line options
-    Options options = new Options();
+    int status;
 
-    options.addOption(null, KEY_ACTION, true, "Action to perform (create, update or verify)");
+    AdminExitCode(int status) {
+      this.status = status;
+    }
 
-    // Local
-    options.addOption(null, KEY_CORE, true, "Name of Solr core");
-    options.addOption(null, KEY_LOCAL, true, "Path to Solr home base directory");
+    public int getStatus() {
+      return status;
+    }
+  }
 
-    // Solr Cloud
-    options.addOption(null, KEY_COLLECTION, true, "Name of Solr Cloud collection");
-    options.addOption(null, KEY_CLOUD, true, "Solr Cloud REST endpoint");
-    options.addOption(null, KEY_ZKHOST, true, "ZooKeeper REST endpoint used by Solr Cloud cluster");
+  private static void exit(AdminExitCode exitCode) {
+    System.exit(exitCode.getStatus());
+  }
 
-    // Parse command-line options
-    CommandLine cmd = new PosixParser().parse(options, args);
-
+  public static void runAction(CommandLine cmd) throws IOException, SolrServerException, SolrResponseErrorException {
     if (cmd.hasOption(KEY_LOCAL) && cmd.hasOption(KEY_CLOUD)) {
       throw new IllegalArgumentException("Both --local and --cloud may not be specified at the same time");
     }
@@ -1754,11 +1783,11 @@ public class SolrArtifactIndexAdmin {
             LocalSolrCoreAdmin.createCore(Paths.get(cmd.getOptionValue(KEY_LOCAL)), coreName);
           } catch (SolrException e) {
             if (e.getMessage().indexOf("already exists") != -1) {
-              log.error("Core already exists");
-              System.exit(1);
+              log.info("Core already exists");
+              break;
             }
 
-            // Unknown SolrException
+            // Re-throw unknown SolrException
             throw e;
           }
           break;
@@ -1775,27 +1804,37 @@ public class SolrArtifactIndexAdmin {
           0 = Solr core is up-to-date
           1 = Solr core is missing
           2 = Solr core needs an update (Lucene index or LOCKSS configuration set)
-          4 = Solr core reindex is in-progress
+          4 = Solr core update and reindex in-progress (normal)
+          8 = Solr core update not in-progress but reindex file present (interrupted)
           */
           LocalSolrCoreAdmin admin2 = LocalSolrCoreAdmin.fromSolrHomeAndCoreName(solrHome, coreName);
 
           if (admin2 != null) {
-            if (admin2.isReindexInProgress()) {
-              System.exit(4);
+            if (!admin2.isUpdateInProgress() && admin2.isReindexInProgress()) {
+              log.error("Detected interrupted update!");
+              exit(AdminExitCode.UPDATE_FAILURE);
+            }
+
+            if (admin2.isUpdateInProgress() && admin2.isReindexInProgress()) {
+              log.info("Update in-progress in another thread or JVM");
+              exit(AdminExitCode.UPDATE_INPROGRESS);
             }
 
             // Core exists: Verify successful upgrade should fail if the core has an update available, or if the core is
             //              in the middle of a reindex.
             if (admin2.isUpdateAvailable()) {
-              System.exit(2);
+              log.info("Update available");
+              exit(AdminExitCode.UPDATE_NEEDED);
             }
+
+            // Core is up-to-date
+            System.exit(0);
           } else {
             // Core not found
             log.error("Core not found!");
-            System.exit(1);
+            exit(AdminExitCode.MISSING_CORE);
           }
 
-          System.exit(0);
           break;
 
         default:
@@ -1824,46 +1863,35 @@ public class SolrArtifactIndexAdmin {
         updater.update();
       }
 
-      /*
-      // Get a HttpSolrClient to the remote Solr endpoint
-      try (SolrClient solrClient = new HttpSolrClient.Builder(solrUrl).build()) {
-        // Get Solr server mode
-        String mode = AdminInfoRequest.getSystemInfo(solrClient).getSolrMode();
-
-        // Different upgrade paths depending on Solr server mode
-        switch (mode) {
-          case "std":
-            // Do stuff related to Solr standalone mode
-            updateRemoteSolrCore(solrClient);
-            break;
-
-          case "solrcloud":
-            try (CloudSolrClient cloudClient = new CloudSolrClient.Builder()
-                .withSolrUrl(solrUrl)
-                .withZkHost(cmd.getOptionValue("zkHost"))
-                .build()) {
-
-              // Determine name of Solr collection to update (or use the default)
-              String collection = cmd.hasOption("collection") ?
-                  cmd.getOptionValue("collection") : SolrArtifactIndex.DEFAULT_SOLRCORE_NAME;
-
-              // Do stuff related to Solr Cloud mode
-              updateSolrCloud(cloudClient);
-            }
-            break;
-
-          default:
-            log.error("Remote Solr server running in unknown mode [solrUrl: {}, mode: {}]", solrUrl, mode);
-            throw new IllegalStateException("Solr server running in unknown mode");
-        }
-
-      } catch (Exception e) {
-        e.printStackTrace();
-      }
-      */
-
     } else {
-      throw new IllegalArgumentException("Nothing to do; --local or --cloud must be specified");
+      throw new IllegalArgumentException("--local or --cloud must be specified");
+    }
+  }
+
+  public static void main(String[] args) throws ParseException, IOException, SolrResponseErrorException, SolrServerException {
+
+    // Define command-line options
+    Options options = new Options();
+
+    options.addOption(null, KEY_ACTION, true, "Action to perform (create, update or verify)");
+
+    // Local
+    options.addOption(null, KEY_CORE, true, "Name of Solr core");
+    options.addOption(null, KEY_LOCAL, true, "Path to Solr home base directory");
+
+    // Solr Cloud
+    options.addOption(null, KEY_COLLECTION, true, "Name of Solr Cloud collection");
+    options.addOption(null, KEY_CLOUD, true, "Solr Cloud REST endpoint");
+    options.addOption(null, KEY_ZKHOST, true, "ZooKeeper REST endpoint used by Solr Cloud cluster");
+
+    try {
+      // Parse command-line options and execute action
+      CommandLine cmd = new PosixParser().parse(options, args);
+      runAction(cmd);
+      exit(AdminExitCode.OK);
+    } catch (Exception e) {
+      log.error("Caught exception: {}", e);
+      exit(AdminExitCode.ERROR);
     }
   }
 
