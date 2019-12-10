@@ -1545,45 +1545,28 @@ public class SolrArtifactIndexAdmin {
      * @return A {@code LocalCoreUpdater} instance or {@code null} if the core could not be found.
      */
     public static LocalSolrCoreAdmin fromSolrHomeAndCoreName(Path solrHome, String coreName) throws IOException {
-      LocalSolrCoreAdmin coreAdmin = null;
-
       log.trace("solrHome = {}", solrHome.toAbsolutePath());
       log.trace("coreName = {}", coreName);
 
       CoreContainer container = CoreContainer.createAndLoad(solrHome);
 
-      Map<String, CoreContainer.CoreLoadFailure> failureMap = container.getCoreInitFailures();
+      try {
+        Map<String, CoreContainer.CoreLoadFailure> failureMap = container.getCoreInitFailures();
 
-      log.trace("failureMap = {}", failureMap);
+        if (failureMap.containsKey(coreName)) {
+          throw new IOException("Could not load core [coreName: " + coreName + "]", failureMap.get(coreName).exception);
+        }
 
-      if (failureMap.containsKey(coreName)) {
-        throw new IOException("Could not load core [coreName: " + coreName + "]", failureMap.get(coreName).exception);
+        try (SolrCore core = container.getCore(coreName)) {
+          if (core != null) {
+            return LocalSolrCoreAdmin.fromSolrCore(core);
+          }
+        }
+      } finally {
+        container.shutdown();
       }
 
-      /*
-      Map<String, SolrCore> cores = container.getCores().stream().collect(
-          Collectors.toMap(
-              core -> core.getName(),
-              core -> core
-          )
-      );
-
-      log.trace("cores.keySet() = {}", cores.keySet());
-
-      if (cores.containsKey(coreName)) {
-        coreAdmin = LocalSolrCoreAdmin.fromSolrCore(cores.get(coreName));
-      }
-      */
-
-      SolrCore core = container.getCore(coreName);
-
-      if (core != null) {
-        coreAdmin = LocalSolrCoreAdmin.fromSolrCore(core);
-      }
-
-      container.shutdown();
-
-      return coreAdmin;
+      return null;
     }
 
     /**
