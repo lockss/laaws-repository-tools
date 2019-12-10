@@ -1554,7 +1554,7 @@ public class SolrArtifactIndexAdmin {
         Map<String, CoreContainer.CoreLoadFailure> failureMap = container.getCoreInitFailures();
 
         if (failureMap.containsKey(coreName)) {
-          throw new IOException("Could not load core [coreName: " + coreName + "]", failureMap.get(coreName).exception);
+          throw new IOException("Failed to load core [coreName: " + coreName + "]", failureMap.get(coreName).exception);
         }
 
         try (SolrCore core = container.getCore(coreName)) {
