@@ -82,7 +82,6 @@ import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.stream.Collectors;
 
 public class SolrArtifactIndexAdmin {
   private final static L4JLogger log = L4JLogger.getLogger();
@@ -1057,7 +1056,9 @@ public class SolrArtifactIndexAdmin {
       CoreContainer container = CoreContainer.createAndLoad(solrHome);
 
       try {
-        return container.getAllCoreNames().contains(solrCoreName);
+        boolean result = container.getAllCoreNames().contains(solrCoreName);
+        log.trace("isExists(core = {}) = {}", getCoreName(), result);
+        return result;
       } finally {
         container.shutdown();
       }
@@ -1071,6 +1072,8 @@ public class SolrArtifactIndexAdmin {
      * @throws IOException Thrown if an error occurred while reading the core's Lucene segments.
      */
     public boolean isLuceneIndexUpgradeAvailable() throws IOException {
+      boolean result;
+
       // Get the minimum version of all the committed segments in this Lucene index
       SegmentInfos segInfos = getSegmentInfos();
 
@@ -1083,12 +1086,14 @@ public class SolrArtifactIndexAdmin {
 
         log.trace("minSegVersion = {}, targetVersion = {}", minSegVersion, TARGET_LUCENE_VERSION);
 
-        return !minSegVersion.onOrAfter(TARGET_LUCENE_VERSION);
+        result = !minSegVersion.onOrAfter(TARGET_LUCENE_VERSION);
       } else {
         log.trace("Index contains no segments");
+        result = false;
       }
 
-      return false;
+      log.trace("isLuceneIndexUpgradeAvailable(core = {}) = {}", getCoreName(), result);
+      return result;
     }
 
     /**
@@ -1100,7 +1105,9 @@ public class SolrArtifactIndexAdmin {
      * @throws IOException Thrown if an error occurs while attempting to read the Solr Configuration Overlay file.
      */
     public boolean isLockssConfigSetUpdateAvailable() throws IOException {
-      return getLockssConfigSetVersion() < LATEST_LOCKSS_CONFIGSET_VERSION;
+      boolean result = getLockssConfigSetVersion() < LATEST_LOCKSS_CONFIGSET_VERSION;
+      log.trace("isLockssConfigSetUpdateAvailable(core = {}) = {}", getCoreName(), result);
+      return result;
     }
 
     /**
@@ -1111,6 +1118,8 @@ public class SolrArtifactIndexAdmin {
      * @throws IOException Thrown if there were I/O problems with the lock file.
      */
     public boolean isUpdateInProgress() throws IOException {
+      boolean result;
+
       File lockfile = indexDir.resolve(UPGRADE_LOCK_FILE).toFile();
 
       log.trace("lockfile = {}", lockfile);
@@ -1118,12 +1127,15 @@ public class SolrArtifactIndexAdmin {
       try (FileChannel channel = new RandomAccessFile(lockfile, "rw").getChannel()) {
         try (FileLock lock = channel.tryLock()) {
           // Acquired lock - an update was not in progress in another thread
-          return false;
+          result = false;
         } catch (OverlappingFileLockException e) {
           // Could not acquire lock - we interpret this to mean another thread is running the update
-          return true;
+          result = true;
         }
       }
+
+      log.trace("isUpdateInProgress(core = {}) = {}", getCoreName(), result);
+      return result;
     }
 
     /**
@@ -1532,7 +1544,7 @@ public class SolrArtifactIndexAdmin {
      * @param coreName A {@code String} containing the name of the Solr core.
      * @return A {@code LocalCoreUpdater} instance or {@code null} if the core could not be found.
      */
-    public static LocalSolrCoreAdmin fromSolrHomeAndCoreName(Path solrHome, String coreName) {
+    public static LocalSolrCoreAdmin fromSolrHomeAndCoreName(Path solrHome, String coreName) throws IOException {
       LocalSolrCoreAdmin coreAdmin = null;
 
       log.trace("solrHome = {}", solrHome.toAbsolutePath());
@@ -1540,6 +1552,15 @@ public class SolrArtifactIndexAdmin {
 
       CoreContainer container = CoreContainer.createAndLoad(solrHome);
 
+      Map<String, CoreContainer.CoreLoadFailure> failureMap = container.getCoreInitFailures();
+
+      log.trace("failureMap = {}", failureMap);
+
+      if (failureMap.containsKey(coreName)) {
+        throw new IOException("Could not load core [coreName: " + coreName + "]", failureMap.get(coreName).exception);
+      }
+
+      /*
       Map<String, SolrCore> cores = container.getCores().stream().collect(
           Collectors.toMap(
               core -> core.getName(),
@@ -1551,6 +1572,13 @@ public class SolrArtifactIndexAdmin {
 
       if (cores.containsKey(coreName)) {
         coreAdmin = LocalSolrCoreAdmin.fromSolrCore(cores.get(coreName));
+      }
+      */
+
+      SolrCore core = container.getCore(coreName);
+
+      if (core != null) {
+        coreAdmin = LocalSolrCoreAdmin.fromSolrCore(core);
       }
 
       container.shutdown();
@@ -1890,7 +1918,7 @@ public class SolrArtifactIndexAdmin {
       runAction(cmd);
       exit(AdminExitCode.OK);
     } catch (Exception e) {
-      log.error("Caught exception: {}", e);
+      log.error("Exception caught", e);
       exit(AdminExitCode.ERROR);
     }
   }

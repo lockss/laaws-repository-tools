@@ -408,7 +408,7 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
    *
    * @return
    */
-  private SolrArtifactIndexAdmin.LocalSolrCoreAdmin adminFromPackagedCore(PackagedTestCore core) {
+  private SolrArtifactIndexAdmin.LocalSolrCoreAdmin adminFromPackagedCore(PackagedTestCore core) throws IOException {
     return SolrArtifactIndexAdmin.LocalSolrCoreAdmin.fromSolrHomeAndCoreName(solrHomePath, core.getCoreName());
   }
 
