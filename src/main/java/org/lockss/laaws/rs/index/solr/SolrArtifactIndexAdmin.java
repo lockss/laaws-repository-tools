@@ -1631,6 +1631,27 @@ public class SolrArtifactIndexAdmin {
     public String getCoreName() {
       return this.solrCoreName;
     }
+
+    public void reindexLatest() throws IOException, SolrResponseErrorException, SolrServerException {
+      try (EmbeddedSolrServer solrClient = new EmbeddedSolrServer(solrHome, solrCoreName)) {
+
+        File reindexLockFile = indexDir.resolve(REINDEX_LOCK_FILE).toFile();
+
+        if (!reindexLockFile.exists()) {
+
+          // Acquired reindex lock
+          FileUtils.touch(reindexLockFile);
+          SolrArtifactIndexReindex.reindexArtifactsForVersion(solrClient, LATEST_LOCKSS_CONFIGSET_VERSION);
+          FileUtils.forceDelete(reindexLockFile);
+
+        } else {
+
+          // Could not acquire reindex lock (reindex lock file already exists)
+          log.trace("Reindex is already in progress");
+
+        }
+      }
+    }
   }
 
   // SOLR CLOUD ////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1850,6 +1871,16 @@ public class SolrArtifactIndexAdmin {
 
           break;
 
+        case "force-reindex":
+          try {
+            // Force a reindex
+            LocalSolrCoreAdmin admin3 = LocalSolrCoreAdmin.fromSolrHomeAndCoreName(solrHome, coreName);
+            admin3.reindexLatest();
+          } catch (Exception e) {
+            log.error("Caught exception while forcing a full reindex to latest artifact schema", e);
+          }
+          break;
+
         default:
           log.error("Unknown action to perform [action: {}]", cmd.getOptionValue(KEY_ACTION));
           throw new IllegalArgumentException("Unknown action");
@@ -1886,7 +1917,7 @@ public class SolrArtifactIndexAdmin {
     // Define command-line options
     Options options = new Options();
 
-    options.addOption(null, KEY_ACTION, true, "Action to perform (create, update or verify)");
+    options.addOption(null, KEY_ACTION, true, "Action to perform (create, update, force-reindex or verify)");
 
     // Local
     options.addOption(null, KEY_CORE, true, "Name of Solr core");
