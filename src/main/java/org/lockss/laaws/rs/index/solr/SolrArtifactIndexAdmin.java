@@ -231,7 +231,9 @@ public class SolrArtifactIndexAdmin {
 
         // Loop through all the documents in the index.
         for (Artifact artifact : IteratorUtils.asIterable(new SolrQueryArtifactIterator(solrClient, q))) {
-          artifact.setSortUri(artifact.getUri());
+
+          // Explicitly set sortUri field with result from getSortUri()
+          artifact.setSortUri(artifact.getSortUri());
 
           handleSolrResponse(
               solrClient.addBean(artifact),
