@@ -1637,10 +1637,9 @@ public class SolrArtifactIndexAdmin {
 
         File reindexLockFile = indexDir.resolve(REINDEX_LOCK_FILE).toFile();
 
-        if (!reindexLockFile.exists()) {
+        if (reindexLockFile.createNewFile()) {
 
-          // Acquired reindex lock
-          FileUtils.touch(reindexLockFile);
+          // Acquired reindex lock: Perform reindex
           SolrArtifactIndexReindex.reindexArtifactsForVersion(solrClient, LATEST_LOCKSS_CONFIGSET_VERSION);
           FileUtils.forceDelete(reindexLockFile);
 
