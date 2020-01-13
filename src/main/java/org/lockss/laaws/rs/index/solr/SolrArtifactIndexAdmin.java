@@ -1028,7 +1028,7 @@ public class SolrArtifactIndexAdmin {
 
       try (FileChannel channel = new RandomAccessFile(reindexLockFile, "rw").getChannel()) {
         try (FileLock lock = channel.tryLock()) {
-          updateLuceneIndex();
+          upgradeLuceneIndex();
           updateConfigSet();
         } catch (OverlappingFileLockException e) {
           // Another thread has the lock
@@ -1173,7 +1173,7 @@ public class SolrArtifactIndexAdmin {
      *
      * @throws IOException
      */
-    public void updateLuceneIndex() throws IOException {
+    public void upgradeLuceneIndex() throws IOException {
       if (isLuceneIndexUpgradeAvailable()) {
         new IndexUpgrader(FSDirectory.open(indexDir)).upgrade();
       }
