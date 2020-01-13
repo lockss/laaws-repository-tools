@@ -47,6 +47,7 @@ import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.embedded.EmbeddedSolrServer;
 import org.apache.solr.client.solrj.impl.CloudSolrClient;
+import org.apache.solr.client.solrj.impl.HttpSolrClient;
 import org.apache.solr.client.solrj.request.CollectionAdminRequest;
 import org.apache.solr.client.solrj.request.ConfigSetAdminRequest;
 import org.apache.solr.client.solrj.request.CoreAdminRequest;
@@ -1766,6 +1767,7 @@ public class SolrArtifactIndexAdmin {
   // ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
   // Constants for command-line options
+  public static final String KEY_ENDPOINT = "endpoint";
   public static final String KEY_ACTION = "action";
   public static final String KEY_CORE = "core";
   public static final String KEY_LOCAL = "local";
@@ -1880,10 +1882,70 @@ public class SolrArtifactIndexAdmin {
           }
           break;
 
+        case "upgrade-lucene-index":
+          LocalSolrCoreAdmin admin4 = LocalSolrCoreAdmin.fromSolrHomeAndCoreName(solrHome, coreName);
+          admin4.upgradeLuceneIndex();
+          break;
+
+        case "update-lockss-configset":
+          /*
+          Exit codes:
+          0 = Installed new LOCKSS configuration set successfully
+          1 = Core already has latest LOCKSS configuration set
+          2 = An error occurred while installing new LOCKSS configuration set
+          */
+          try {
+            LocalSolrCoreAdmin admin5 = LocalSolrCoreAdmin.fromSolrHomeAndCoreName(solrHome, coreName);
+
+            if (admin5.isLockssConfigSetUpdateAvailable()) {
+              // Install next LOCKSS configuration set version
+              admin5.retireConfigSet();
+              admin5.installLockssConfigSetVersion(admin5.getLockssConfigSetVersion() + 1);
+              System.exit(0);
+            } else {
+              // Core has latest LOCKSS configuration set
+              System.exit(1);
+            }
+          } catch (IOException e) {
+            log.error("Could not install LOCKSS configuration set", e);
+            System.exit(2);
+          }
+          break;
+
         default:
           log.error("Unknown action to perform [action: {}]", cmd.getOptionValue(KEY_ACTION));
           throw new IllegalArgumentException("Unknown action");
       }
+
+    } else if (cmd.hasOption(KEY_ENDPOINT)) {
+
+      // Get SolrClient from Solr REST endpoint
+      HttpSolrClient solrClient = new HttpSolrClient.Builder()
+          .withBaseSolrUrl(cmd.getOptionValue(KEY_ENDPOINT))
+          .build();
+
+      try {
+        switch (cmd.getOptionValue(KEY_ACTION)) {
+          case "apply-lockss-configset-changes":
+
+            // Determine target version
+            CoreConfigRequest req = new CoreConfigRequest.Overlay();
+            CoreConfigResponse.Overlay res = (CoreConfigResponse.Overlay) req.process(solrClient);
+            int targetVersion = res.getLockssConfigSetVersion();
+
+            // Apply changes for target LOCKSS configuration set version
+            //TODO give this method a new name
+            SolrArtifactIndexReindex.reindexArtifactsForVersion(solrClient, targetVersion);
+
+            break;
+
+          default:
+            throw new IllegalArgumentException("Unknown action: " + cmd.getOptionValue(KEY_ACTION));
+        }
+      } finally {
+        solrClient.close();
+      }
+
 
     } else if (cmd.hasOption(KEY_CLOUD)) {
 
@@ -1907,7 +1969,7 @@ public class SolrArtifactIndexAdmin {
       }
 
     } else {
-      throw new IllegalArgumentException("--local or --cloud must be specified");
+      throw new IllegalArgumentException("--local, --endpoint, or --cloud must be specified");
     }
   }
 
@@ -1921,6 +1983,9 @@ public class SolrArtifactIndexAdmin {
     // Local
     options.addOption(null, KEY_CORE, true, "Name of Solr core");
     options.addOption(null, KEY_LOCAL, true, "Path to Solr home base directory");
+
+    // Endpoint
+    options.addOption(null, KEY_ENDPOINT, true, "Solr REST endpoint");
 
     // Solr Cloud
     options.addOption(null, KEY_COLLECTION, true, "Name of Solr Cloud collection");
