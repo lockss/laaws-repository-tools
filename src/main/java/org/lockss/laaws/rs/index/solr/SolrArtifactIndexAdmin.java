@@ -1898,9 +1898,12 @@ public class SolrArtifactIndexAdmin {
             LocalSolrCoreAdmin admin5 = LocalSolrCoreAdmin.fromSolrHomeAndCoreName(solrHome, coreName);
 
             if (admin5.isLockssConfigSetUpdateAvailable()) {
+              // Target version to install
+              int targetVersion = admin5.getLockssConfigSetVersion() + 1;
+
               // Install next LOCKSS configuration set version
               admin5.retireConfigSet();
-              admin5.installLockssConfigSetVersion(admin5.getLockssConfigSetVersion() + 1);
+              admin5.installLockssConfigSetVersion(targetVersion);
               System.exit(0);
             } else {
               // Core has latest LOCKSS configuration set
