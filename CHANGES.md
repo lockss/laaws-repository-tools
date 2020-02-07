@@ -1,6 +1,10 @@
 # Release Notes
 
-## Changes Since 2.0.6.0
+## Major Changes Since 2.0.7.0
+
+*   (highlights go here)
+
+## 2.0.7.0
 
 ### Features
 
