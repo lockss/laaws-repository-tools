@@ -1132,7 +1132,7 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
       // Upgrade the core's Lucene index
       SolrArtifactIndexAdmin.LocalSolrCoreAdmin coreAdmin = adminFromPackagedCore(pCore);
       assertNotNull(coreAdmin);
-      coreAdmin.updateLuceneIndex();
+      coreAdmin.upgradeLuceneIndex();
 
       // Assert Lucene index is at latest version
       assertMinSegmentLuceneVersion(pCore, LATEST_LUCENE_VERSION);
