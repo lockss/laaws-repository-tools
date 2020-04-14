@@ -58,6 +58,7 @@ import org.lockss.util.test.LockssTestCase5;
 
 import java.io.*;
 import java.lang.reflect.Method;
+import java.net.URI;
 import java.net.URL;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
@@ -836,7 +837,7 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
     ArtifactSpec spec = ArtifactSpec.forCollAuUrl("c", "a", "u")
         .setArtifactId("ok")
         .setCollectionDate(0)
-        .setStorageUrl("url")
+        .setStorageUrl(new URI("url"))
         .generateContent()
         .thenCommit();
 
@@ -1032,7 +1033,7 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
       ArtifactSpec spec = ArtifactSpec.forCollAuUrl("c", "a", "u")
           .setArtifactId("ok")
           .setCollectionDate(0)
-          .setStorageUrl("url")
+          .setStorageUrl(new URI("url"))
           .generateContent()
           .thenCommit();
 
@@ -1070,7 +1071,7 @@ public class TestSolrArtifactIndexAdmin extends LockssTestCase5 {
       ArtifactSpec spec = ArtifactSpec.forCollAuUrl("c", "a", "u")
           .setArtifactId("ok")
           .setCollectionDate(0)
-          .setStorageUrl("url")
+          .setStorageUrl(new URI("url"))
           .generateContent()
           .thenCommit();
 

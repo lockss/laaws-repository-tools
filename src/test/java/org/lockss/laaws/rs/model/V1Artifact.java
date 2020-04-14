@@ -86,7 +86,7 @@ public class V1Artifact implements Serializable {
     artifact.setUri(spec.getUrl());
     artifact.setVersion(spec.getVersion());
     artifact.setCommitted(spec.isCommitted());
-    artifact.setStorageUrl(spec.getStorageUrl());
+    artifact.setStorageUrl(spec.getStorageUrl().toString());
     artifact.setContentLength(spec.getContentLength());
     artifact.setContentDigest(spec.getContentDigest());
     artifact.setCollectionDate(spec.getCollectionDate());
