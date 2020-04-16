@@ -69,6 +69,7 @@ import org.json.JSONObject;
 import org.lockss.laaws.rs.io.index.solr.SolrArtifactIndex;
 import org.lockss.laaws.rs.io.index.solr.SolrQueryArtifactIterator;
 import org.lockss.laaws.rs.io.index.solr.SolrResponseErrorException;
+import org.lockss.laaws.rs.io.storage.local.LocalWarcArtifactDataStore;
 import org.lockss.laaws.rs.model.Artifact;
 import org.lockss.log.L4JLogger;
 import org.lockss.util.io.FileUtil;
@@ -1775,6 +1776,8 @@ public class SolrArtifactIndexAdmin {
   public static final String KEY_CLOUD = "cloud";
   public static final String KEY_ZKHOST = "zkHost";
 
+  public static final String KEY_LOCALDS = "localds";
+
   private enum AdminExitCode {
     OK(0),
     MISSING_CORE(1),
@@ -1885,6 +1888,25 @@ public class SolrArtifactIndexAdmin {
           }
           break;
 
+        case "rebuild":
+          if (!cmd.hasOption(KEY_LOCALDS)) {
+            log.error("No local data store base directories specified");
+            exit(AdminExitCode.ERROR);
+          }
+
+          // Parse semcolon delimited list of local artifact data store base directories
+          String[] dirs = cmd.getOptionValue(KEY_LOCALDS).split(";");
+          File[] baseDirs = Arrays.stream(dirs).map(File::new).toArray(File[]::new);
+
+          // Rebuild local Solr artifact index from local data store
+          try (EmbeddedSolrServer solrClient = new EmbeddedSolrServer(solrHome, coreName)) {
+            SolrArtifactIndex index = new SolrArtifactIndex(solrClient);
+            LocalWarcArtifactDataStore ds = new LocalWarcArtifactDataStore(index, baseDirs);
+            ds.rebuildIndex(index);
+          }
+
+          break;
+
         case "upgrade-lucene-index":
           LocalSolrCoreAdmin admin4 = LocalSolrCoreAdmin.fromSolrHomeAndCoreName(solrHome, coreName);
           admin4.upgradeLuceneIndex();
@@ -1946,6 +1968,23 @@ public class SolrArtifactIndexAdmin {
 
             break;
 
+          case "rebuild":
+            if (!cmd.hasOption(KEY_LOCALDS)) {
+              log.error("No local data store base directories specified");
+              exit(AdminExitCode.ERROR);
+            }
+
+            // Parse semcolon delimited list of local artifact data store base directories
+            String[] dirs = cmd.getOptionValue(KEY_LOCALDS).split(";");
+            File[] baseDirs = Arrays.stream(dirs).map(File::new).toArray(File[]::new);
+
+            // Rebuild the Solr index from the local data store
+            SolrArtifactIndex index = new SolrArtifactIndex(solrClient);
+            LocalWarcArtifactDataStore ds = new LocalWarcArtifactDataStore(index, baseDirs);
+            ds.rebuildIndex(index);
+
+            break;
+
           default:
             throw new IllegalArgumentException("Unknown action: " + cmd.getOptionValue(KEY_ACTION));
         }
@@ -1985,7 +2024,7 @@ public class SolrArtifactIndexAdmin {
     // Define command-line options
     Options options = new Options();
 
-    options.addOption(null, KEY_ACTION, true, "Action to perform (create, update, force-reindex or verify)");
+    options.addOption(null, KEY_ACTION, true, "Action to perform (create, update, force-reindex, rebuild or verify)");
 
     // Local
     options.addOption(null, KEY_CORE, true, "Name of Solr core");
@@ -1998,6 +2037,9 @@ public class SolrArtifactIndexAdmin {
     options.addOption(null, KEY_COLLECTION, true, "Name of Solr Cloud collection");
     options.addOption(null, KEY_CLOUD, true, "Solr Cloud REST endpoint");
     options.addOption(null, KEY_ZKHOST, true, "ZooKeeper REST endpoint used by Solr Cloud cluster");
+
+    // Data store source (for index rebuilds)
+    options.addOption(null, KEY_LOCALDS, true, "Local data store base directories");
 
     try {
       // Parse command-line options and execute action
