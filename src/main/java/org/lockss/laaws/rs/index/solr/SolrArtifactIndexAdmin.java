@@ -1806,14 +1806,14 @@ public class SolrArtifactIndexAdmin {
       throw new IllegalArgumentException("Both --local and --cloud may not be specified at the same time");
     }
 
+    // Determine name of Solr core to update (or use the default)
+    String coreName = cmd.hasOption(KEY_CORE) ?
+        cmd.getOptionValue(KEY_CORE) : DEFAULT_SOLRCORE_NAME;
+
     if (cmd.hasOption(KEY_LOCAL)) {
 
       // Path to Solr home
       Path solrHome = Paths.get(cmd.getOptionValue(KEY_LOCAL));
-
-      // Determine name of Solr core to update (or use the default)
-      String coreName = cmd.hasOption(KEY_CORE) ?
-          cmd.getOptionValue(KEY_CORE) : DEFAULT_SOLRCORE_NAME;
 
       switch (cmd.getOptionValue(KEY_ACTION)) {
         case "create":
@@ -1900,7 +1900,7 @@ public class SolrArtifactIndexAdmin {
 
           // Rebuild local Solr artifact index from local data store
           try (EmbeddedSolrServer solrClient = new EmbeddedSolrServer(solrHome, coreName)) {
-            SolrArtifactIndex index = new SolrArtifactIndex(solrClient);
+            SolrArtifactIndex index = new SolrArtifactIndex(coreName, solrClient);
             LocalWarcArtifactDataStore ds = new LocalWarcArtifactDataStore(index, baseDirs);
             ds.rebuildIndex(index);
           }
@@ -1974,12 +1974,12 @@ public class SolrArtifactIndexAdmin {
               exit(AdminExitCode.ERROR);
             }
 
-            // Parse semcolon delimited list of local artifact data store base directories
+            // Parse semi-colon delimited list of local artifact data store base directories
             String[] dirs = cmd.getOptionValue(KEY_LOCALDS).split(";");
             File[] baseDirs = Arrays.stream(dirs).map(File::new).toArray(File[]::new);
 
             // Rebuild the Solr index from the local data store
-            SolrArtifactIndex index = new SolrArtifactIndex(solrClient);
+            SolrArtifactIndex index = new SolrArtifactIndex(coreName, solrClient);
             LocalWarcArtifactDataStore ds = new LocalWarcArtifactDataStore(index, baseDirs);
             ds.rebuildIndex(index);
 

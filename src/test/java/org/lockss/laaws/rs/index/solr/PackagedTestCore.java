@@ -191,7 +191,7 @@ public enum PackagedTestCore {
     try (EmbeddedSolrServer solrClient = new EmbeddedSolrServer(SRC_SOLR_HOME_PATH, getCoreName())) {
 
       // Instantiate a new SolrArtifactIndex
-      ArtifactIndex index = new SolrArtifactIndex(solrClient);
+      ArtifactIndex index = new SolrArtifactIndex(getCoreName(), solrClient);
       index.initIndex();
 
       // Populate Solr core
