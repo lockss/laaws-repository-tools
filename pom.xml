@@ -66,36 +66,6 @@
     </dependency>
 
     <dependency>
-      <groupId>org.lockss.laaws</groupId>
-      <artifactId>laaws-repository-core</artifactId>
-      <version>${version.lockss.lockss-repository-core}</version>
-      <exclusions>
-        <!-- brings Servlet API 2.5 via repo-core, Spring especially spring-test needs 3.0.1 or better -->
-        <exclusion>
-          <groupId>javax.servlet</groupId>
-          <artifactId>servlet-api</artifactId>
-        </exclusion>
-        <!-- brings sealed Jetty 6 but we have Jetty 5 -->
-        <exclusion>
-          <groupId>org.mortbay.jetty</groupId>
-          <artifactId>jetty</artifactId>
-        </exclusion>
-        <exclusion>
-          <groupId>org.mortbay.jetty</groupId>
-          <artifactId>jetty-util</artifactId>
-        </exclusion>
-      </exclusions>
-    </dependency>
-
-    <dependency>
-      <groupId>org.lockss.laaws</groupId>
-      <artifactId>laaws-repository-core</artifactId>
-      <version>${version.lockss.lockss-repository-core}</version>
-      <type>test-jar</type>
-      <scope>test</scope>
-    </dependency>
-
-    <dependency>
       <groupId>org.lockss</groupId>
       <artifactId>lockss-core-bundle</artifactId>
       <version>${version.lockss.lockss-core-bundle}</version>
@@ -137,10 +107,19 @@
       <artifactId>laaws-repository-core</artifactId>
       <version>${version.lockss.lockss-repository-core}</version>
       <exclusions>
-        <!-- eventually brings servlet-api 2.5 but spring-test needs 3.0.1 or better -->
+        <!-- brings Servlet API 2.5 via repo-core, Spring especially spring-test needs 3.0.1 or better -->
         <exclusion>
           <groupId>javax.servlet</groupId>
           <artifactId>servlet-api</artifactId>
+        </exclusion>
+        <!-- brings sealed Jetty 6 but we have Jetty 5 -->
+        <exclusion>
+          <groupId>org.mortbay.jetty</groupId>
+          <artifactId>jetty</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.mortbay.jetty</groupId>
+          <artifactId>jetty-util</artifactId>
         </exclusion>
       </exclusions>
     </dependency>
