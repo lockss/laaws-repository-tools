@@ -65,6 +65,7 @@ import org.apache.solr.core.SolrCore;
 import org.apache.solr.core.SolrXmlConfig;
 import org.apache.solr.schema.FieldType;
 import org.apache.solr.schema.IndexSchema;
+import org.json.JSONException;
 import org.json.JSONObject;
 import org.lockss.laaws.rs.io.index.solr.SolrArtifactIndex;
 import org.lockss.laaws.rs.io.index.solr.SolrQueryArtifactIterator;
@@ -1320,6 +1321,9 @@ public class SolrArtifactIndexAdmin {
             return userProps.getInt(LOCKSS_CONFIGSET_VERSION_KEY);
           }
         }
+      } catch (JSONException e) {
+        log.error("JSON parser exception while reading Solr configuration overlay [cfgPath: {}]", configOverlayPath, e);
+        throw new IOException("Error reading Solr configuration overlay file", e);
       }
 
       return 0;
