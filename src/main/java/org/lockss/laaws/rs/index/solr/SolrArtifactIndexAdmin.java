@@ -141,7 +141,7 @@ public class SolrArtifactIndexAdmin {
      * @param solrClient    A SolrJ {@code SolrCore} implementation.
      * @param targetVersion A {@code int} representing the target version of the reindex operation.
      */
-    public static void reindexArtifactsForVersion(SolrClient solrClient, int targetVersion)
+    public static void reindexArtifactsForVersion(SolrClient solrClient, String collection, int targetVersion)
         throws SolrServerException, SolrResponseErrorException, IOException {
 
       log.trace("targetVersion = {}", targetVersion);
@@ -150,11 +150,11 @@ public class SolrArtifactIndexAdmin {
 
         switch (targetVersion) {
           case 2:
-            reindexArtifactsFrom1To2(solrClient);
+            reindexArtifactsFrom1To2(solrClient, collection);
             break;
 
           case 3:
-            reindexArtifactsFrom2To3(solrClient);
+            reindexArtifactsFrom2To3(solrClient, collection);
             break;
 
           default:
@@ -180,13 +180,13 @@ public class SolrArtifactIndexAdmin {
      * @throws SolrServerException
      * @throws SolrResponseErrorException
      */
-    public static void reindexArtifactsFrom1To2(SolrClient solrClient) throws IOException, SolrServerException, SolrResponseErrorException {
+    public static void reindexArtifactsFrom1To2(SolrClient solrClient, String collection) throws IOException, SolrServerException, SolrResponseErrorException {
       try {
 
         // Loop through all the documents in the index.
         SolrQuery q = new SolrQuery().setQuery("*:*");
 
-        for (Artifact artifact : IteratorUtils.asIterable(new SolrQueryArtifactIterator(solrClient, q))) {
+        for (Artifact artifact : IteratorUtils.asIterable(new SolrQueryArtifactIterator(collection, solrClient, q))) {
           // Create a Solr input document
           SolrInputDocument document = new SolrInputDocument();
 
@@ -217,15 +217,15 @@ public class SolrArtifactIndexAdmin {
       }
     }
 
-    private static void reindexArtifactsFrom2To3(SolrClient solrClient) throws IOException, SolrServerException, SolrResponseErrorException {
-      reindexAllArtifacts(solrClient);
+    private static void reindexArtifactsFrom2To3(SolrClient solrClient, String collection) throws IOException, SolrServerException, SolrResponseErrorException {
+      reindexAllArtifacts(solrClient, collection);
     }
 
     /**
      * Experimental. Performs an in-place reindex of all artifacts in the Solr index. All fields must be "stored" in the
      * index's schema for this to work.
      */
-    public static void reindexAllArtifacts(SolrClient solrClient)
+    public static void reindexAllArtifacts(SolrClient solrClient, String collection)
         throws SolrServerException, SolrResponseErrorException, IOException {
 
       try {
@@ -233,7 +233,7 @@ public class SolrArtifactIndexAdmin {
         SolrQuery q = new SolrQuery().setQuery("*:*");
 
         // Loop through all the documents in the index.
-        for (Artifact artifact : IteratorUtils.asIterable(new SolrQueryArtifactIterator(solrClient, q))) {
+        for (Artifact artifact : IteratorUtils.asIterable(new SolrQueryArtifactIterator(collection, solrClient, q))) {
 
           // Explicitly set artifact's URI field to update sortUri
           artifact.setUri(artifact.getUri());
@@ -364,7 +364,7 @@ public class SolrArtifactIndexAdmin {
      * @throws SolrServerException        if Solr reports problems.
      * @throws IOException                if Solr reports problems.
      */
-    private void updateSchema(int targetSchemaVersion)
+    private void updateSchema(String collection, int targetSchemaVersion)
         throws SolrResponseErrorException, SolrServerException, IOException {
 
       log.debug2("targetSchemaVersion = " + targetSchemaVersion);
@@ -396,7 +396,7 @@ public class SolrArtifactIndexAdmin {
         );
 
         // Update the schema and get the last updated version.
-        int lastUpdatedVersion = updateSchema(existingSchemaVersion, targetSchemaVersion);
+        int lastUpdatedVersion = updateSchema(collection, existingSchemaVersion, targetSchemaVersion);
         log.trace("lastRecordedVersion = {}", lastUpdatedVersion);
 
         log.info("Schema has been updated to LOCKSS version {}",
@@ -527,7 +527,7 @@ public class SolrArtifactIndexAdmin {
      * @throws SolrServerException        if Solr reports problems.
      * @throws IOException                if Solr reports problems.
      */
-    private int updateSchema(int existingVersion, int finalVersion)
+    private int updateSchema(String collection, int existingVersion, int finalVersion)
         throws SolrResponseErrorException, SolrServerException, IOException {
 
       log.debug2("existingVersion = {}", existingVersion);
@@ -541,7 +541,7 @@ public class SolrArtifactIndexAdmin {
         log.trace("Updating from version {}...", from);
 
         // Perform the appropriate update of the Solr schema for this version.
-        updateSchemaToVersion(from + 1);
+        updateSchemaToVersion(collection, from + 1);
 
         // Remember the current schema version.
         lastUpdatedVersion = from + 1;
@@ -564,7 +564,7 @@ public class SolrArtifactIndexAdmin {
      * @throws SolrServerException        if Solr reports problems.
      * @throws IOException                if Solr reports problems.
      */
-    private void updateSchemaToVersion(int targetVersion)
+    private void updateSchemaToVersion(String collection, int targetVersion)
         throws SolrResponseErrorException, SolrServerException, IOException {
 
       log.debug2("targetVersion = {}", targetVersion);
@@ -576,7 +576,7 @@ public class SolrArtifactIndexAdmin {
             updateSchemaFrom0To1();
             break;
           case 2:
-            updateSchemaFrom1To2();
+            updateSchemaFrom1To2(collection);
             break;
           default:
             throw new IllegalArgumentException("Non-existent method to update the schema to version " + targetVersion);
@@ -734,7 +734,7 @@ public class SolrArtifactIndexAdmin {
      * @throws SolrServerException        if Solr reports problems.
      * @throws IOException                if Solr reports problems.
      */
-    private void updateSchemaFrom1To2()
+    private void updateSchemaFrom1To2(String collection)
         throws SolrResponseErrorException, SolrServerException, IOException {
       log.debug2("Invoked");
 
@@ -755,7 +755,7 @@ public class SolrArtifactIndexAdmin {
         // Loop through all the documents in the index.
         SolrQuery q = new SolrQuery().setQuery("*:*");
 
-        for (Artifact artifact : IteratorUtils.asIterable(new SolrQueryArtifactIterator(solrClient, q))) {
+        for (Artifact artifact : IteratorUtils.asIterable(new SolrQueryArtifactIterator(collection, solrClient, q))) {
           // Initialize a document with the artifact identifier.
           SolrInputDocument document = new SolrInputDocument();
           document.addField("id", artifact.getId());
@@ -1164,7 +1164,7 @@ public class SolrArtifactIndexAdmin {
       log.debug("Applying schema updates through SolrJ");
 
       try (SolrClient solrClient = new EmbeddedSolrServer(solrHome, solrCoreName)) {
-        new ArtifactIndexSchemaUpdater(solrClient).updateSchema(LATEST_LOCKSS_CONFIGSET_VERSION);
+        new ArtifactIndexSchemaUpdater(solrClient).updateSchema(getCoreName(), LATEST_LOCKSS_CONFIGSET_VERSION);
       } catch (IOException | SolrServerException | SolrResponseErrorException e) {
         // TODO better error handling
         e.printStackTrace();
@@ -1241,7 +1241,7 @@ public class SolrArtifactIndexAdmin {
           if (!reindexLockFile.exists()) {
             // Acquired reindex lock
             FileUtils.touch(reindexLockFile);
-            SolrArtifactIndexReindex.reindexArtifactsForVersion(solrClient, version + 1);
+            SolrArtifactIndexReindex.reindexArtifactsForVersion(solrClient, getCoreName(), version + 1);
             FileUtils.forceDelete(reindexLockFile);
           } else {
             // Could not acquire reindex lock (reindex lock file already exists)
@@ -1646,7 +1646,7 @@ public class SolrArtifactIndexAdmin {
         if (reindexLockFile.createNewFile()) {
 
           // Acquired reindex lock: Perform reindex
-          SolrArtifactIndexReindex.reindexArtifactsForVersion(solrClient, LATEST_LOCKSS_CONFIGSET_VERSION);
+          SolrArtifactIndexReindex.reindexArtifactsForVersion(solrClient, getCoreName(), LATEST_LOCKSS_CONFIGSET_VERSION);
           FileUtils.forceDelete(reindexLockFile);
 
         } else {
@@ -1690,7 +1690,7 @@ public class SolrArtifactIndexAdmin {
     public void update() {
       try {
 //        updateLuceneIndex();
-        uploadConfigSet();
+        uploadConfigSet(cloudClient.getDefaultCollection());
 //        applySchemaUpdates();
       } catch (IOException | SolrResponseErrorException | SolrServerException e) {
         log.error("Caught exception while attempting to upgrade Solr Cloud collection [collection: "
@@ -1715,7 +1715,7 @@ public class SolrArtifactIndexAdmin {
       return 0;
     }
 
-    public void uploadConfigSet() throws IOException, SolrResponseErrorException, SolrServerException {
+    public void uploadConfigSet(String collection) throws IOException, SolrResponseErrorException, SolrServerException {
       int lockssConfigSetVersion = getLockssConfigSetVersion();
       int targetVersion = LATEST_LOCKSS_CONFIGSET_VERSION;
 
@@ -1728,7 +1728,7 @@ public class SolrArtifactIndexAdmin {
         installConfigSetVersion(version + 1);
 
         // Perform post-installation tasks
-        SolrArtifactIndexReindex.reindexArtifactsForVersion(cloudClient, version + 1);
+        SolrArtifactIndexReindex.reindexArtifactsForVersion(cloudClient, collection, version + 1);
 
         lockssConfigSetVersion = version + 1;
       }
@@ -1744,9 +1744,9 @@ public class SolrArtifactIndexAdmin {
       }
     }
 
-    public void applySchemaUpdates() {
+    public void applySchemaUpdates(String collection) {
       try {
-        new ArtifactIndexSchemaUpdater(cloudClient).updateSchema(LATEST_LOCKSS_CONFIGSET_VERSION);
+        new ArtifactIndexSchemaUpdater(cloudClient).updateSchema(collection, LATEST_LOCKSS_CONFIGSET_VERSION);
       } catch (SolrResponseErrorException | SolrServerException | IOException e) {
         e.printStackTrace();
       }
@@ -1824,7 +1824,7 @@ public class SolrArtifactIndexAdmin {
           try {
             LocalSolrCoreAdmin.createCore(Paths.get(cmd.getOptionValue(KEY_LOCAL)), coreName);
           } catch (SolrException e) {
-            if (e.getMessage().indexOf("already exists") != -1) {
+            if (e.getMessage().contains("already exists")) {
               log.info("Core already exists");
               break;
             }
@@ -1904,7 +1904,7 @@ public class SolrArtifactIndexAdmin {
 
           // Rebuild local Solr artifact index from local data store
           try (EmbeddedSolrServer solrClient = new EmbeddedSolrServer(solrHome, coreName)) {
-            SolrArtifactIndex index = new SolrArtifactIndex(coreName, solrClient);
+            SolrArtifactIndex index = new SolrArtifactIndex(solrClient, coreName);
             LocalWarcArtifactDataStore ds = new LocalWarcArtifactDataStore(index, baseDirs);
             ds.rebuildIndex(index);
           }
@@ -1968,7 +1968,7 @@ public class SolrArtifactIndexAdmin {
 
             // Apply changes for target LOCKSS configuration set version
             //TODO give this method a new name
-            SolrArtifactIndexReindex.reindexArtifactsForVersion(solrClient, targetVersion);
+            SolrArtifactIndexReindex.reindexArtifactsForVersion(solrClient, coreName, targetVersion);
 
             break;
 
@@ -1983,7 +1983,7 @@ public class SolrArtifactIndexAdmin {
             File[] baseDirs = Arrays.stream(dirs).map(File::new).toArray(File[]::new);
 
             // Rebuild the Solr index from the local data store
-            SolrArtifactIndex index = new SolrArtifactIndex(coreName, solrClient);
+            SolrArtifactIndex index = new SolrArtifactIndex(solrClient, coreName);
             LocalWarcArtifactDataStore ds = new LocalWarcArtifactDataStore(index, baseDirs);
             ds.rebuildIndex(index);
 
