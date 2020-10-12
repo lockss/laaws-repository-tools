@@ -327,7 +327,14 @@ public class TestWARCImporter extends LockssTestCase5 {
     WARCRecordInfo recordInfo = new WARCRecordInfo();
     recordInfo.setType(WARCRecordType.response);
     recordInfo.setUrl(artSpec.getUrl());
-    recordInfo.setCreate14DigitDate(DateTimeFormatter.ISO_INSTANT.format(Instant.now().atZone(ZoneOffset.UTC)));
+
+    recordInfo.setCreate14DigitDate(
+        DateTimeFormatter.ISO_INSTANT.format(
+            artSpec.getCollectionDate() > 0 ?
+                Instant.ofEpochMilli(artSpec.getCollectionDate()).atZone(ZoneOffset.UTC) :
+                Instant.now().atZone(ZoneOffset.UTC)
+        ));
+
     recordInfo.setMimetype(WARCConstants.HTTP_RESPONSE_MIMETYPE);
     recordInfo.setEnforceLength(true);
 
