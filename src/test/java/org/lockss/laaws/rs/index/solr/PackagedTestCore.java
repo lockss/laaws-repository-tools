@@ -43,6 +43,7 @@ import org.lockss.laaws.rs.model.V2Artifact;
 import org.lockss.log.L4JLogger;
 
 import java.io.IOException;
+import java.net.URI;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -190,7 +191,7 @@ public enum PackagedTestCore {
     try (EmbeddedSolrServer solrClient = new EmbeddedSolrServer(SRC_SOLR_HOME_PATH, getCoreName())) {
 
       // Instantiate a new SolrArtifactIndex
-      ArtifactIndex index = new SolrArtifactIndex(solrClient);
+      ArtifactIndex index = new SolrArtifactIndex(solrClient, getCoreName());
       index.initIndex();
 
       // Populate Solr core
@@ -255,7 +256,7 @@ public enum PackagedTestCore {
         ArtifactSpec.forCollAuUrlVer("c", "a", "u", 1)
             .setArtifactId("aid")
             .setCollectionDate(0)
-            .setStorageUrl("sUrl")
+            .setStorageUrl(URI.create("sUrl"))
             .setContent("\"Sometimes I can't find the right words.\"\n\"Sometimes there aren't any.\"")
             .thenCommit()
     );

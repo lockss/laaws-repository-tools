@@ -37,6 +37,9 @@ import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.net.URI;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -324,7 +327,14 @@ public class TestWARCImporter extends LockssTestCase5 {
     WARCRecordInfo recordInfo = new WARCRecordInfo();
     recordInfo.setType(WARCRecordType.response);
     recordInfo.setUrl(artSpec.getUrl());
-    recordInfo.setCreate14DigitDate(ArchiveUtils.get14DigitDate());
+
+    recordInfo.setCreate14DigitDate(
+        DateTimeFormatter.ISO_INSTANT.format(
+            artSpec.getCollectionDate() > 0 ?
+                Instant.ofEpochMilli(artSpec.getCollectionDate()).atZone(ZoneOffset.UTC) :
+                Instant.now().atZone(ZoneOffset.UTC)
+        ));
+
     recordInfo.setMimetype(WARCConstants.HTTP_RESPONSE_MIMETYPE);
     recordInfo.setEnforceLength(true);
 

@@ -1,5 +1,9 @@
 # Release Notes
 
+## Major Changes Since 2.0.7.1
+
+*   (highlights go here)
+
 ## 2.0.7.1
 
 ### Fixes
