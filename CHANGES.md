@@ -1,6 +1,6 @@
-# Release Notes
+# `laaws-repository-tools` Release Notes
 
-## Major Changes Since 2.0.8.0
+## Changes Since 2.0.8.0
 
 *   ...
 
