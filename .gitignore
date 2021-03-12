@@ -435,3 +435,4 @@ filelist.txt
 
 /pom.xml.bak
 /*/pom.xml.bak
+/.surefire-*
