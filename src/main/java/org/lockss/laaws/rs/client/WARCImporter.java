@@ -45,7 +45,7 @@ import org.lockss.laaws.rs.model.ArtifactData;
 import org.lockss.laaws.rs.model.ArtifactIdentifier;
 import org.lockss.laaws.rs.util.ArtifactDataFactory;
 import org.lockss.log.L4JLogger;
-import org.lockss.util.FileUtil;
+import org.lockss.util.io.FileUtil;
 import java.io.*;
 import java.net.MalformedURLException;
 import java.net.URL;
