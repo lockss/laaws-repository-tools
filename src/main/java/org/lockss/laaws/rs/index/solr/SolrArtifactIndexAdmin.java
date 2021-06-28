@@ -51,6 +51,7 @@ import org.apache.solr.client.solrj.impl.HttpSolrClient;
 import org.apache.solr.client.solrj.request.CollectionAdminRequest;
 import org.apache.solr.client.solrj.request.ConfigSetAdminRequest;
 import org.apache.solr.client.solrj.request.CoreAdminRequest;
+import org.apache.solr.client.solrj.request.UpdateRequest;
 import org.apache.solr.client.solrj.request.schema.FieldTypeDefinition;
 import org.apache.solr.client.solrj.request.schema.SchemaRequest;
 import org.apache.solr.client.solrj.response.CoreAdminResponse;
@@ -73,6 +74,7 @@ import org.lockss.laaws.rs.io.index.solr.SolrResponseErrorException;
 import org.lockss.laaws.rs.io.storage.local.LocalWarcArtifactDataStore;
 import org.lockss.laaws.rs.model.Artifact;
 import org.lockss.log.L4JLogger;
+import org.lockss.util.ListUtil;
 import org.lockss.util.io.FileUtil;
 
 import java.io.*;
@@ -141,7 +143,8 @@ public class SolrArtifactIndexAdmin {
      * @param solrClient    A SolrJ {@code SolrCore} implementation.
      * @param targetVersion A {@code int} representing the target version of the reindex operation.
      */
-    public static void reindexArtifactsForVersion(SolrClient solrClient, String collection, int targetVersion)
+    public static void reindexArtifactsForVersion(SolrClient solrClient, List<String> solrCredentials,
+                                                  String collection, int targetVersion)
         throws SolrServerException, SolrResponseErrorException, IOException {
 
       log.trace("targetVersion = {}", targetVersion);
@@ -150,11 +153,11 @@ public class SolrArtifactIndexAdmin {
 
         switch (targetVersion) {
           case 2:
-            reindexArtifactsFrom1To2(solrClient, collection);
+            reindexArtifactsFrom1To2(solrClient, solrCredentials, collection);
             break;
 
           case 3:
-            reindexArtifactsFrom2To3(solrClient, collection);
+            reindexArtifactsFrom2To3(solrClient, solrCredentials, collection);
             break;
 
           default:
@@ -180,13 +183,16 @@ public class SolrArtifactIndexAdmin {
      * @throws SolrServerException
      * @throws SolrResponseErrorException
      */
-    public static void reindexArtifactsFrom1To2(SolrClient solrClient, String collection) throws IOException, SolrServerException, SolrResponseErrorException {
-      try {
+    public static void reindexArtifactsFrom1To2(SolrClient solrClient, List<String> solrCredentials, String collection)
+        throws IOException, SolrServerException, SolrResponseErrorException {
 
+      try {
         // Loop through all the documents in the index.
         SolrQuery q = new SolrQuery().setQuery("*:*");
 
-        for (Artifact artifact : IteratorUtils.asIterable(new SolrQueryArtifactIterator(collection, solrClient, q))) {
+        for (Artifact artifact : IteratorUtils.asIterable(
+            new SolrQueryArtifactIterator(collection, solrClient, solrCredentials, q))) {
+
           // Create a Solr input document
           SolrInputDocument document = new SolrInputDocument();
 
@@ -201,12 +207,32 @@ public class SolrArtifactIndexAdmin {
 
           log.trace("document = {}", document);
 
+          // Create an update request to add the document
+          UpdateRequest req = new UpdateRequest();
+          req.add(document);
+          req.setCommitWithin(-1);
+
+          // Add Solr BasicAuth credentials if present
+          if (solrCredentials != null) {
+            req.setBasicAuthCredentials(
+                /* Username */ solrCredentials.get(0),
+                /* Password */ solrCredentials.get(1)
+            );
+          }
+
           // Add the document with the new field.
-          handleSolrResponse(solrClient.add(document), "Problem adding artifact '" + document + "' to Solr");
+          handleSolrResponse(
+              req.process(solrClient, collection),
+              "Problem adding artifact '" + document + "' to Solr");
         }
 
         // Commit all changes
-        handleSolrResponse(solrClient.commit(), "Problem committing changes to Solr");
+        UpdateRequest commitRequest = new UpdateRequest();
+        commitRequest.setAction(UpdateRequest.ACTION.COMMIT, true, true);
+
+        handleSolrResponse(
+            commitRequest.process(solrClient, collection),
+            "Problem committing changes to Solr");
 
       } catch (IOException | SolrServerException | SolrResponseErrorException e) {
 
@@ -217,15 +243,17 @@ public class SolrArtifactIndexAdmin {
       }
     }
 
-    private static void reindexArtifactsFrom2To3(SolrClient solrClient, String collection) throws IOException, SolrServerException, SolrResponseErrorException {
-      reindexAllArtifacts(solrClient, collection);
+    private static void reindexArtifactsFrom2To3(SolrClient solrClient, List<String> solrCredentials, String collection)
+        throws IOException, SolrServerException, SolrResponseErrorException {
+
+      reindexAllArtifacts(solrClient, solrCredentials, collection);
     }
 
     /**
      * Experimental. Performs an in-place reindex of all artifacts in the Solr index. All fields must be "stored" in the
      * index's schema for this to work.
      */
-    public static void reindexAllArtifacts(SolrClient solrClient, String collection)
+    public static void reindexAllArtifacts(SolrClient solrClient, List<String> solrCredentials, String collection)
         throws SolrServerException, SolrResponseErrorException, IOException {
 
       try {
@@ -233,19 +261,31 @@ public class SolrArtifactIndexAdmin {
         SolrQuery q = new SolrQuery().setQuery("*:*");
 
         // Loop through all the documents in the index.
-        for (Artifact artifact : IteratorUtils.asIterable(new SolrQueryArtifactIterator(collection, solrClient, q))) {
+        for (Artifact artifact :
+            IteratorUtils.asIterable(new SolrQueryArtifactIterator(collection, solrClient, solrCredentials, q))) {
 
           // Explicitly set artifact's URI field to update sortUri
           artifact.setUri(artifact.getUri());
 
+          // UpdateRequest to add Solr document
+          UpdateRequest req = new UpdateRequest();
+          req.add(solrClient.getBinder().toSolrInputDocument(artifact));
+          req.setCommitWithin(-1);
+
           handleSolrResponse(
-              solrClient.addBean(artifact),
+              req.process(solrClient, collection),
               "Problem reindexing artifact [artifactId: " + artifact.getId() + "]"
           );
         }
 
+        // Commit request
+        UpdateRequest commitRequest = new UpdateRequest();
+        commitRequest.setAction(UpdateRequest.ACTION.COMMIT, true, true);
+
         // Commit all changes
-        handleSolrResponse(solrClient.commit(), "Problem committing changes to Solr");
+        handleSolrResponse(
+            commitRequest.process(solrClient, collection),
+            "Problem committing changes to Solr");
 
       } catch (IOException | SolrServerException | SolrResponseErrorException e) {
         log.error("Caught exception while performing an in-place reindex of all Solr documents: {}", e);
@@ -350,9 +390,11 @@ public class SolrArtifactIndexAdmin {
     private Map<String, Map<String, Object>> solrSchemaFields = null;
 
     private SolrClient solrClient;
+    private List<String> solrCredentials;
 
-    public ArtifactIndexSchemaUpdater(SolrClient client) {
+    public ArtifactIndexSchemaUpdater(SolrClient client, List<String> solrCredentials) {
       this.solrClient = client;
+      this.solrCredentials = solrCredentials;
     }
 
     /**
@@ -755,7 +797,9 @@ public class SolrArtifactIndexAdmin {
         // Loop through all the documents in the index.
         SolrQuery q = new SolrQuery().setQuery("*:*");
 
-        for (Artifact artifact : IteratorUtils.asIterable(new SolrQueryArtifactIterator(collection, solrClient, q))) {
+        for (Artifact artifact :
+            IteratorUtils.asIterable(new SolrQueryArtifactIterator(collection, solrClient, solrCredentials, q))) {
+
           // Initialize a document with the artifact identifier.
           SolrInputDocument document = new SolrInputDocument();
           document.addField("id", artifact.getId());
@@ -765,12 +809,23 @@ public class SolrArtifactIndexAdmin {
           document.addField("collectionDate", getFieldModifier("set", artifact.getCollectionDate()));
           log.trace("document = {}", document);
 
+          // UpdateRequest to add Solr document
+          UpdateRequest updateRequest = new UpdateRequest();
+          updateRequest.add(solrClient.getBinder().toSolrInputDocument(artifact));
+          updateRequest.setCommitWithin(-1);
+
           // Add the document with the new field.
           handleSolrResponse(solrClient.add(document), "Problem adding document '" + document + "' to Solr");
         }
 
+        // Commit request
+        UpdateRequest commitRequest = new UpdateRequest();
+        commitRequest.setAction(UpdateRequest.ACTION.COMMIT, true, true);
+
         // Commit all changes
-        handleSolrResponse(solrClient.commit(), "Problem committing changes to Solr");
+        handleSolrResponse(
+            commitRequest.process(solrClient, collection),
+            "Problem committing changes to Solr");
 
       } catch (SolrServerException | IOException e) {
         String errorMessage = "Exception caught updating Solr schema to LOCKSS version 2";
@@ -1164,7 +1219,8 @@ public class SolrArtifactIndexAdmin {
       log.debug("Applying schema updates through SolrJ");
 
       try (SolrClient solrClient = new EmbeddedSolrServer(solrHome, solrCoreName)) {
-        new ArtifactIndexSchemaUpdater(solrClient).updateSchema(getCoreName(), LATEST_LOCKSS_CONFIGSET_VERSION);
+        new ArtifactIndexSchemaUpdater(solrClient, null)
+            .updateSchema(getCoreName(), LATEST_LOCKSS_CONFIGSET_VERSION);
       } catch (IOException | SolrServerException | SolrResponseErrorException e) {
         // TODO better error handling
         e.printStackTrace();
@@ -1241,7 +1297,7 @@ public class SolrArtifactIndexAdmin {
           if (!reindexLockFile.exists()) {
             // Acquired reindex lock
             FileUtils.touch(reindexLockFile);
-            SolrArtifactIndexReindex.reindexArtifactsForVersion(solrClient, getCoreName(), version + 1);
+            SolrArtifactIndexReindex.reindexArtifactsForVersion(solrClient, null, getCoreName(), version + 1);
             FileUtils.forceDelete(reindexLockFile);
           } else {
             // Could not acquire reindex lock (reindex lock file already exists)
@@ -1646,7 +1702,8 @@ public class SolrArtifactIndexAdmin {
         if (reindexLockFile.createNewFile()) {
 
           // Acquired reindex lock: Perform reindex
-          SolrArtifactIndexReindex.reindexArtifactsForVersion(solrClient, getCoreName(), LATEST_LOCKSS_CONFIGSET_VERSION);
+          SolrArtifactIndexReindex.reindexArtifactsForVersion(solrClient, null, getCoreName(),
+              LATEST_LOCKSS_CONFIGSET_VERSION);
           FileUtils.forceDelete(reindexLockFile);
 
         } else {
@@ -1663,13 +1720,16 @@ public class SolrArtifactIndexAdmin {
 
   public static class SolrCloudCollectionAdmin {
     CloudSolrClient cloudClient;
+    List<String> solrCredentials;
 
-    public SolrCloudCollectionAdmin(CloudSolrClient cloudClient) {
+    public SolrCloudCollectionAdmin(CloudSolrClient cloudClient, List<String> solrCredentials) {
       this.cloudClient = cloudClient;
+      this.solrCredentials = solrCredentials;
     }
 
-    public static SolrCloudCollectionAdmin fromCloudSolrClient(CloudSolrClient cloudClient) {
-      return new SolrCloudCollectionAdmin(cloudClient);
+    public static SolrCloudCollectionAdmin fromCloudSolrClient(
+        CloudSolrClient cloudClient, List<String> solrCredentials) {
+      return new SolrCloudCollectionAdmin(cloudClient, solrCredentials);
     }
 
     /**
@@ -1728,7 +1788,7 @@ public class SolrArtifactIndexAdmin {
         installConfigSetVersion(version + 1);
 
         // Perform post-installation tasks
-        SolrArtifactIndexReindex.reindexArtifactsForVersion(cloudClient, collection, version + 1);
+        SolrArtifactIndexReindex.reindexArtifactsForVersion(cloudClient, solrCredentials, collection, version + 1);
 
         lockssConfigSetVersion = version + 1;
       }
@@ -1746,7 +1806,8 @@ public class SolrArtifactIndexAdmin {
 
     public void applySchemaUpdates(String collection) {
       try {
-        new ArtifactIndexSchemaUpdater(cloudClient).updateSchema(collection, LATEST_LOCKSS_CONFIGSET_VERSION);
+        new ArtifactIndexSchemaUpdater(cloudClient, solrCredentials).updateSchema(collection,
+            LATEST_LOCKSS_CONFIGSET_VERSION);
       } catch (SolrResponseErrorException | SolrServerException | IOException e) {
         e.printStackTrace();
       }
@@ -1773,6 +1834,8 @@ public class SolrArtifactIndexAdmin {
 
   // Constants for command-line options
   public static final String KEY_ENDPOINT = "endpoint";
+  public static final String KEY_SOLRUSERNAME = "user";
+  public static final String KEY_SOLRPASSWORD = "password";
   public static final String KEY_ACTION = "action";
   public static final String KEY_CORE = "core";
   public static final String KEY_LOCAL = "local";
@@ -1963,12 +2026,29 @@ public class SolrArtifactIndexAdmin {
 
             // Determine target version
             CoreConfigRequest req = new CoreConfigRequest.Overlay();
+
+            // Set Solr BasicAuth credentials if present
+            if (cmd.hasOption(KEY_SOLRUSERNAME)) {
+              req.setBasicAuthCredentials(
+                  cmd.getOptionValue(KEY_SOLRUSERNAME),
+                  cmd.getOptionValue(KEY_SOLRPASSWORD));
+            }
+
             CoreConfigResponse.Overlay res = (CoreConfigResponse.Overlay) req.process(solrClient);
             int targetVersion = res.getLockssConfigSetVersion();
 
+            List<String> credentials = null;
+
+            if (cmd.hasOption(KEY_SOLRUSERNAME)) {
+              credentials = ListUtil.list(
+                  cmd.getOptionValue(KEY_SOLRUSERNAME),
+                  cmd.getOptionValue(KEY_SOLRPASSWORD)
+              );
+            }
+
             // Apply changes for target LOCKSS configuration set version
             //TODO give this method a new name
-            SolrArtifactIndexReindex.reindexArtifactsForVersion(solrClient, coreName, targetVersion);
+            SolrArtifactIndexReindex.reindexArtifactsForVersion(solrClient, credentials, coreName, targetVersion);
 
             break;
 
@@ -2014,7 +2094,16 @@ public class SolrArtifactIndexAdmin {
         // Set default Solr Cloud client collection
         cloudClient.setDefaultCollection(collection);
 
-        SolrCloudCollectionAdmin updater = SolrCloudCollectionAdmin.fromCloudSolrClient(cloudClient);
+        List<String> credentials = null;
+
+        if (cmd.hasOption(KEY_SOLRUSERNAME)) {
+          credentials = ListUtil.list(
+              cmd.getOptionValue(KEY_SOLRUSERNAME),
+              cmd.getOptionValue(KEY_SOLRPASSWORD)
+          );
+        }
+
+        SolrCloudCollectionAdmin updater = SolrCloudCollectionAdmin.fromCloudSolrClient(cloudClient, credentials);
         updater.update();
       }
 
@@ -2036,6 +2125,8 @@ public class SolrArtifactIndexAdmin {
 
     // Endpoint
     options.addOption(null, KEY_ENDPOINT, true, "Solr REST endpoint");
+    options.addOption(null, KEY_SOLRUSERNAME, true, "Solr username");
+    options.addOption(null, KEY_SOLRPASSWORD, true, "Solr password");
 
     // Solr Cloud
     options.addOption(null, KEY_COLLECTION, true, "Name of Solr Cloud collection");

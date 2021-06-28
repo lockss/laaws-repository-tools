@@ -432,3 +432,7 @@ lib/run-props
 /logs
 
 filelist.txt
+
+/pom.xml.bak
+/*/pom.xml.bak
+/.surefire-*
