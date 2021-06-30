@@ -1661,7 +1661,7 @@ public class SolrArtifactIndexAdmin {
           // base directory (as specified in solr.xml) if the core is configured to use a shared configuration set.
           core.getCoreDescriptor().getConfigSet() == null ?
               core.getCoreContainer().getNodeConfig().getConfigSetBaseDirectory() :
-              SolrXmlConfig.fromSolrHome(Paths.get(core.getCoreContainer().getSolrHome()))
+              SolrXmlConfig.fromSolrHome(Paths.get(core.getCoreContainer().getSolrHome()), null)
                   .getConfigSetBaseDirectory()
                   .resolve(core.getCoreDescriptor().getConfigSet()),
 
