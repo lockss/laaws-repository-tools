@@ -98,10 +98,9 @@ public class WARCImporter {
    * @throws IOException
    *           if there are problems creating the local repository.
    */
-  public WARCImporter(File repoDir, String persistedIndexName,
+  public WARCImporter(File stateDir, File repoDir, String persistedIndexName,
       String collection, String auid) throws IOException {
-    this(new LocalLockssRepository(repoDir, persistedIndexName), collection,
-	auid);
+    this(new LocalLockssRepository(stateDir, repoDir, persistedIndexName), collection, auid);
   }
 
   /**
@@ -213,7 +212,7 @@ public class WARCImporter {
       log.trace("Using the local directory: {}", localRepoDir);
 
       // Create the WARC file importer.
-      warcImporter = new WARCImporter(new File(localRepoDir),
+      warcImporter = new WARCImporter(null, new File(localRepoDir),
 	  "artifact-index.ser", collection, auid);
     } else {
       // No: Report the error.

@@ -53,18 +53,18 @@ import java.util.stream.Collectors;
 
 public enum PackagedTestCore {
   // Solr 6.x
-  SOLR6_EMPTY_V1("solr6-empty-v1", Version.fromBits(6,6,5), 1, false),
-  SOLR6_POPULATED_V1("solr6-populated-v1", Version.fromBits(6,6,5), 1, true),
-  SOLR6_EMPTY_V2("solr6-empty-v2", Version.fromBits(6,6,5), 2, false),
-  SOLR6_POPULATED_V2("solr6-populated-v2", Version.fromBits(6,6,5), 2, true),
+//  SOLR6_EMPTY_V1("solr6-empty-v1", Version.fromBits(6,6,5), 1, false),
+//  SOLR6_POPULATED_V1("solr6-populated-v1", Version.fromBits(6,6,5), 1, true),
+//  SOLR6_EMPTY_V2("solr6-empty-v2", Version.fromBits(6,6,5), 2, false),
+//  SOLR6_POPULATED_V2("solr6-populated-v2", Version.fromBits(6,6,5), 2, true),
 
   // Solr 7.x
   SOLR7_EMPTY_V1("solr7-empty-v1", Version.fromBits(7,2,1), 1, false),
-  SOLR7_POPULATED_V1("solr7-populated-v1", Version.fromBits(7,2,1), 1, true),
+//  SOLR7_POPULATED_V1("solr7-populated-v1", Version.fromBits(7,2,1), 1, true),
   SOLR7_EMPTY_V2("solr7-empty-v2", Version.fromBits(7,2,1), 2, false),
-  SOLR7_POPULATED_V2("solr7-populated-v2", Version.fromBits(7,2,1), 2, true),
-  SOLR7_EMPTY_V3("solr7-empty-v3", Version.fromBits(7,2,1), 3, false),
-  SOLR7_POPULATED_V3("solr7-populated-v3", Version.fromBits(7,2,1), 3, true);
+//  SOLR7_POPULATED_V2("solr7-populated-v2", Version.fromBits(7,2,1), 2, true),
+  SOLR7_EMPTY_V3("solr7-empty-v3", Version.fromBits(7,2,1), 3, false);
+//  SOLR7_POPULATED_V3("solr7-populated-v3", Version.fromBits(7,2,1), 3, true);
 
   // Cores from sullockss-laaws-dev-02 and sullockss-laaws-dev-04
 //  LOCKSS_DEV2_20191115("dev2.lockss-repo.20191115", Version.fromBits(6, 6, 5), 1, true, false),

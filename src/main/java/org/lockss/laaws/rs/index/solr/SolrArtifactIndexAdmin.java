@@ -104,7 +104,7 @@ public class SolrArtifactIndexAdmin {
   /**
    * Target version of the Lucene index and segments.
    */
-  public static final Version TARGET_LUCENE_VERSION = Version.fromBits(7, 2, 1);
+  public static final Version TARGET_LUCENE_VERSION = Version.fromBits(8, 9, 0);
 
   /**
    * The key in the custom user properties of the Solr core configuration overlay, used to track a Solr core's version
@@ -1968,8 +1968,8 @@ public class SolrArtifactIndexAdmin {
           // Rebuild local Solr artifact index from local data store
           try (EmbeddedSolrServer solrClient = new EmbeddedSolrServer(solrHome, coreName)) {
             SolrArtifactIndex index = new SolrArtifactIndex(solrClient, coreName);
-            LocalWarcArtifactDataStore ds = new LocalWarcArtifactDataStore(index, baseDirs);
-            ds.rebuildIndex(index);
+            LocalWarcArtifactDataStore ds = new LocalWarcArtifactDataStore(baseDirs);
+            ds.reindexArtifacts(index);
           }
 
           break;
@@ -2064,8 +2064,8 @@ public class SolrArtifactIndexAdmin {
 
             // Rebuild the Solr index from the local data store
             SolrArtifactIndex index = new SolrArtifactIndex(solrClient, coreName);
-            LocalWarcArtifactDataStore ds = new LocalWarcArtifactDataStore(index, baseDirs);
-            ds.rebuildIndex(index);
+            LocalWarcArtifactDataStore ds = new LocalWarcArtifactDataStore(baseDirs);
+            ds.reindexArtifacts(index);
 
             break;
 

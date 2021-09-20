@@ -110,7 +110,7 @@ public class TestWARCImporter extends LockssTestCase5 {
     File warc1 = generateWarcFile("generatedWarc1", warcDir, artSpec);
 
     // Import into the repository the test WARC file just generated.
-    WARCImporter warcImporter = new WARCImporter(warcDir, "artifact-index.ser",
+    WARCImporter warcImporter = new WARCImporter(null, warcDir, "artifact-index.ser",
 	artSpec.getCollection(), artSpec.getAuid());
     warcImporter.importWARC(warc1);
 
