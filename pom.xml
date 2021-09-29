@@ -157,42 +157,4 @@ POSSIBILITY OF SUCH DAMAGE.
     </dependency>
 
   </dependencies>
-
-  <build>
-    <plugins>
-      <plugin>
-        <groupId>org.codehaus.mojo</groupId>
-        <artifactId>exec-maven-plugin</artifactId>
-        <version>${version.plugin.exec-maven-plugin}</version>
-
-        <executions>
-          <execution>
-            <id>generateConfigSetFileLists</id>
-            <phase>generate-resources</phase>
-            <goals>
-              <goal>exec</goal>
-            </goals>
-            <configuration>
-              <!-- Working directory set to base directory of LOCKSS config sets -->
-              <workingDirectory>${project.basedir}/src/main/resources/solr/configsets/lockss</workingDirectory>
-              <executable>${project.basedir}/scripts/genConfigSetFilelists.sh</executable>
-            </configuration>
-          </execution>
-
-          <execution>
-            <id>generatePrebakedSolrHomeFilelist</id>
-            <phase>generate-test-resources</phase>
-            <goals>
-              <goal>exec</goal>
-            </goals>
-            <configuration>
-              <!-- Working directory set to base directory of LOCKSS config sets -->
-              <workingDirectory>${project.basedir}/src/test/resources/solr</workingDirectory>
-              <executable>${project.basedir}/scripts/generateFilelist.sh</executable>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
-    </plugins>
-  </build>
 </project>
