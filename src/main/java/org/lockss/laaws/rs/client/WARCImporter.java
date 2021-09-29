@@ -142,7 +142,9 @@ public class WARCImporter {
     // Setup command line options
     Options options = new Options();
     options.addOption("l", "localRepository", true,
-	"Target local repository URL");
+	"Local repository content base directory");
+    options.addOption("s", "stateDir", true,
+        "Local repository state directory");
     options.addOption("r", "restRepository", true, "Target repository URL");
     options.addOption("c", "collection", true, "Target collection ID");
     options.addOption("a", "auid", true, "Archival Unit ID (AUID)");
@@ -211,9 +213,20 @@ public class WARCImporter {
       String localRepoDir = cmd.getOptionValue("localRepository");
       log.trace("Using the local directory: {}", localRepoDir);
 
+      File baseDir = new File(localRepoDir);
+
+      // Default state directory if the path to one was not provided
+      File stateDir = baseDir.toPath()
+          .resolve("state")
+          .toFile();
+
+      if (cmd.hasOption("stateDir")) {
+        stateDir = new File(cmd.getOptionValue("stateDir"));
+      }
+
       // Create the WARC file importer.
-      warcImporter = new WARCImporter(null, new File(localRepoDir),
-	  "artifact-index.ser", collection, auid);
+      warcImporter = new WARCImporter(stateDir, baseDir,
+          "artifact-index.ser", collection, auid);
     } else {
       // No: Report the error.
       log.error("No repository data found:"
