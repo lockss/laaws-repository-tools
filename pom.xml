@@ -39,13 +39,13 @@ POSSIBILITY OF SUCH DAMAGE.
   <parent>
     <groupId>org.lockss</groupId>
     <artifactId>lockss-parent-pom</artifactId>
-    <version>1.13.0</version>
+    <version>1.14.0</version>
     <relativePath />
   </parent>
 
   <groupId>org.lockss.laaws</groupId>
   <artifactId>laaws-repository-tools</artifactId>
-  <version>2.9.0</version>
+  <version>2.10.0</version>
   <packaging>jar</packaging>
 
   <name>laaws-repository-tools</name>
@@ -73,6 +73,12 @@ POSSIBILITY OF SUCH DAMAGE.
       <artifactId>lockss-core-bundle</artifactId>
       <version>${version.lockss.lockss-core-bundle}</version>
       <type>pom</type>
+    </dependency>
+
+    <dependency>
+      <groupId>org.lockss</groupId>
+      <artifactId>lockss-util-core</artifactId>
+      <version>${version.lockss.lockss-util-core}</version>
     </dependency>
 
     <dependency>
@@ -142,6 +148,12 @@ POSSIBILITY OF SUCH DAMAGE.
       <version>${version.group.solr}</version>
     </dependency>
 
+    <dependency>
+      <groupId>org.apache.solr</groupId>
+      <artifactId>solr-core</artifactId>
+      <version>${version.group.solr}</version>
+    </dependency>
+
     <!-- Needed for MiniSolrCloudCluster in testing -->
     <dependency>
       <groupId>org.apache.solr</groupId>
@@ -150,49 +162,5 @@ POSSIBILITY OF SUCH DAMAGE.
       <scope>test</scope>
     </dependency>
 
-    <dependency>
-      <groupId>org.apache.solr</groupId>
-      <artifactId>solr-core</artifactId>
-      <version>${version.group.solr}</version>
-    </dependency>
-
   </dependencies>
-
-  <build>
-    <plugins>
-      <plugin>
-        <groupId>org.codehaus.mojo</groupId>
-        <artifactId>exec-maven-plugin</artifactId>
-        <version>${version.plugin.exec-maven-plugin}</version>
-
-        <executions>
-          <execution>
-            <id>generateConfigSetFileLists</id>
-            <phase>generate-resources</phase>
-            <goals>
-              <goal>exec</goal>
-            </goals>
-            <configuration>
-              <!-- Working directory set to base directory of LOCKSS config sets -->
-              <workingDirectory>${project.basedir}/src/main/resources/solr/configsets/lockss</workingDirectory>
-              <executable>${project.basedir}/scripts/genConfigSetFilelists.sh</executable>
-            </configuration>
-          </execution>
-
-          <execution>
-            <id>generatePrebakedSolrHomeFilelist</id>
-            <phase>generate-test-resources</phase>
-            <goals>
-              <goal>exec</goal>
-            </goals>
-            <configuration>
-              <!-- Working directory set to base directory of LOCKSS config sets -->
-              <workingDirectory>${project.basedir}/src/test/resources/solr</workingDirectory>
-              <executable>${project.basedir}/scripts/generateFilelist.sh</executable>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
-    </plugins>
-  </build>
 </project>
