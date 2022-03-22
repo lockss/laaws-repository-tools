@@ -299,17 +299,21 @@ public class WARCImporter {
 	log.trace("version: {}", version);
 
 	// Create an ArtifactIdentifier
-	ArtifactIdentifier identifier = new ArtifactIdentifier(
-	    collection,
-	    auid,
-	    headers.getUrl(),
-	    version
-	    );
+	ArtifactIdentifier identifier = new ArtifactIdentifier()
+      .collection(collection)
+      .auid(auid)
+      .uri(headers.getUrl())
+      .version(version);
 
 	log.trace("identifier: {}", () -> identifier);
 
 	// Set the artifact identifier
-	artifactData.setIdentifier(identifier);
+//	artifactData.setIdentifier(identifier);
+        artifactData
+            .collection(collection)
+            .auid(auid)
+            .uri(headers.getUrl())
+            .version(version);
 
 	// Upload the artifact
 	Artifact artifact = repository.addArtifact(artifactData);

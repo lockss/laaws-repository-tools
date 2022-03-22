@@ -145,7 +145,7 @@ public class TestWARCImporter extends LockssTestCase5 {
 	  assertEquals(collection, artifact.getCollection());
 	  assertEquals(auId, artifact.getAuid());
 	  assertTrue(artifact.getCommitted());
-	  artSpec.assertArtifact(repository, artifact);
+	  artSpec.assertArtifactData(repository, artifact);
 	}
       }
     }
