@@ -122,7 +122,7 @@ public class WARCImporter {
    *          WARC file.
    */
   public WARCImporter(URL url, String user, String password, String collection,
-      String auid) {
+      String auid) throws IOException {
     this(new RestLockssRepository(url, user, password), collection, auid);
   }
 
