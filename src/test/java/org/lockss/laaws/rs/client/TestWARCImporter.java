@@ -111,7 +111,7 @@ public class TestWARCImporter extends LockssTestCase5 {
 
     // Import into the repository the test WARC file just generated.
     WARCImporter warcImporter = new WARCImporter(null, warcDir, "artifact-index.ser",
-	artSpec.getCollection(), artSpec.getAuid());
+	artSpec.getNamespace(), artSpec.getAuid());
     warcImporter.importWARC(warc1);
 
     // Importing WARCs always commits resulting artifacts so mark the ArtifactSpec as committed
@@ -123,13 +123,13 @@ public class TestWARCImporter extends LockssTestCase5 {
     int count = 0;
 
     // Loop through all the collections existing in the repository.
-    for (String collection : repository.getCollectionIds()) {
+    for (String ns : repository.getNamespaces()) {
       // Verify the single collection.
       assertEquals(1, ++count);
-      assertEquals(artSpec.getCollection(), collection);
+      assertEquals(artSpec.getNamespace(), ns);
 
       // Loop through all the Archival Units linked to this collection.
-      for (String auId : repository.getAuIds(collection)) {
+      for (String auId : repository.getAuIds(ns)) {
 	// Verify the single Archival Unit.
 	assertEquals(0, --count);
 	assertEquals(artSpec.getAuid(), auId);
@@ -137,12 +137,12 @@ public class TestWARCImporter extends LockssTestCase5 {
 	// Loop through all the Artifacts linked to this Archival Unit and
 	// collection pair.
 	for (Artifact artifact
-	    : repository.getArtifactsAllVersions(collection, auId)) {
+	    : repository.getArtifactsAllVersions(ns, auId)) {
 	  // Verify the single Artifact.
 	  assertEquals(1, ++count);
 
 	  // Verify the artifact contents.
-	  assertEquals(collection, artifact.getCollection());
+	  assertEquals(ns, artifact.getNamespace());
 	  assertEquals(auId, artifact.getAuid());
 	  assertTrue(artifact.getCommitted());
 	  artSpec.assertArtifact(repository, artifact);
