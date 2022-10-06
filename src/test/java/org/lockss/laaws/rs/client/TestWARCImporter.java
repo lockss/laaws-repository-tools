@@ -73,7 +73,7 @@ public class TestWARCImporter extends LockssTestCase5 {
   @Test
   public void test() throws Exception {
     // Expectations of the artifact created.
-    ArtifactSpec artSpec = ArtifactSpec.forCollAuUrlVer("collection1", "auid1",
+    ArtifactSpec artSpec = ArtifactSpec.forNsAuUrlVer("ns1", "auid1",
 	"http://some.server.org/", 1);
 
     artSpec.setStatusLine(new BasicStatusLine(new ProtocolVersion("HTTP", 1,1),
@@ -122,20 +122,20 @@ public class TestWARCImporter extends LockssTestCase5 {
 
     int count = 0;
 
-    // Loop through all the collections existing in the repository.
+    // Loop through all the namespaces in the repository.
     for (String ns : repository.getNamespaces()) {
-      // Verify the single collection.
+      // Verify the single namespace.
       assertEquals(1, ++count);
       assertEquals(artSpec.getNamespace(), ns);
 
-      // Loop through all the Archival Units linked to this collection.
+      // Loop through all the Archival Units linked to this namespace.
       for (String auId : repository.getAuIds(ns)) {
 	// Verify the single Archival Unit.
 	assertEquals(0, --count);
 	assertEquals(artSpec.getAuid(), auId);
 
 	// Loop through all the Artifacts linked to this Archival Unit and
-	// collection pair.
+	// namespace pair.
 	for (Artifact artifact
 	    : repository.getArtifactsAllVersions(ns, auId)) {
 	  // Verify the single Artifact.

@@ -58,7 +58,7 @@ import java.util.List;
 public class WARCImporter {
   private static final L4JLogger log = L4JLogger.getLogger();
   private LockssRepository repository;
-  private String collection;
+  private String namespace;
   private String auid;
 
   /**
@@ -67,17 +67,16 @@ public class WARCImporter {
    * @param repository
    *          A LockssRepository with the existing repository where to import
    *          the WARC file.
-   * @param collection
-   *          A String with the name of the collection where to import the WARC
-   *          file.
+   * @param namespace
+   *          A String with the target namespace of artifacts imported from the WARC file.
    * @param auid
    *          A String with the Archival Unit identifier linked to the imported
    *          WARC file.
    */
-  public WARCImporter(LockssRepository repository, String collection,
+  public WARCImporter(LockssRepository repository, String namespace,
       String auid) {
     this.repository = repository;
-    this.collection = collection;
+    this.namespace = namespace;
     this.auid = auid;
   }
 
@@ -89,9 +88,8 @@ public class WARCImporter {
    * @param persistedIndexName
    *          A String with the name of the file where to persist the repository
    *          index.
-   * @param collection
-   *          A String with the name of the collection where to import the WARC
-   *          file.
+   * @param namespace
+   *          A String with the target namespace of artifacts imported from the WARC file.
    * @param auid
    *          A String with the Archival Unit identifier linked to the imported
    *          WARC file.
@@ -99,8 +97,8 @@ public class WARCImporter {
    *           if there are problems creating the local repository.
    */
   public WARCImporter(File stateDir, File repoDir, String persistedIndexName,
-      String collection, String auid) throws IOException {
-    this(new LocalLockssRepository(stateDir, repoDir, persistedIndexName), collection, auid);
+                      String namespace, String auid) throws IOException {
+    this(new LocalLockssRepository(stateDir, repoDir, persistedIndexName), namespace, auid);
   }
 
   /**
@@ -114,16 +112,15 @@ public class WARCImporter {
    * @param password
    *          A String with the password of the user to use to access the REST
    *          service repository.
-   * @param collection
-   *          A String with the name of the collection where to import the WARC
-   *          file.
+   * @param namespace
+   *          A String with the target namespace of artifacts imported from the WARC file.
    * @param auid
    *          A String with the Archival Unit identifier linked to the imported
    *          WARC file.
    */
-  public WARCImporter(URL url, String user, String password, String collection,
+  public WARCImporter(URL url, String user, String password, String namespace,
       String auid) throws IOException {
-    this(new RestLockssRepository(url, user, password), collection, auid);
+    this(new RestLockssRepository(url, user, password), namespace, auid);
   }
 
   /**
@@ -146,7 +143,7 @@ public class WARCImporter {
     options.addOption("s", "stateDir", true,
         "Local repository state directory");
     options.addOption("r", "restRepository", true, "Target repository URL");
-    options.addOption("c", "collection", true, "Target collection ID");
+    options.addOption("n", "namespace", true, "Target namespace");
     options.addOption("a", "auid", true, "Archival Unit ID (AUID)");
     options.addOption("u", "user", true, "User name");
     options.addOption("f", "passwordFile", true, "User password file pathname");
@@ -164,9 +161,8 @@ public class WARCImporter {
       log.trace("Forcing AUID of WARC records to: {}", auid);
     }
 
-    // Get the specified collection where to import the WARC file.
-    String collection = cmd.getOptionValue("collection");
-    log.trace("collection: {}", collection);
+    String ns = cmd.getOptionValue("namespace");
+    log.trace("namespace: {}", ns);
 
     WARCImporter warcImporter = null;
 
@@ -206,7 +202,7 @@ public class WARCImporter {
 
       // Create the WARC file importer.
       warcImporter = new WARCImporter(new URL(restServiceUrlSpec),
-	  restServiceUser, restServicePassword, collection, auid);
+	  restServiceUser, restServicePassword, ns, auid);
       // No: Check whether a local repository has been specified.
     } else if (cmd.hasOption("localRepository")) {
       // Yes: Get the local repository directory.
@@ -226,7 +222,7 @@ public class WARCImporter {
 
       // Create the WARC file importer.
       warcImporter = new WARCImporter(stateDir, baseDir,
-          "artifact-index.ser", collection, auid);
+          "artifact-index.ser", ns, auid);
     } else {
       // No: Report the error.
       log.error("No repository data found:"
@@ -262,7 +258,7 @@ public class WARCImporter {
    */
   public LockssRepository importWARC(File warc) throws IOException {
     log.debug2("warc: {}", () -> warc);
-    log.debug2("collection: {}", collection);
+    log.debug2("namespace: {}", namespace);
     log.debug2("auid: {}", auid);
 
     int processedCount = 0;
@@ -300,7 +296,7 @@ public class WARCImporter {
 
 	// Create an ArtifactIdentifier
 	ArtifactIdentifier identifier = new ArtifactIdentifier(
-	    collection,
+      namespace,
 	    auid,
 	    headers.getUrl(),
 	    version
@@ -318,7 +314,7 @@ public class WARCImporter {
 	String artifactId = artifact.getId();
 
 	// Commit artifact immediately
-	repository.commitArtifact(collection, artifactId);
+	repository.commitArtifact(namespace, artifactId);
 	log.info("Committed artifactId: {}", artifactId);
 
 	importedCount++;
