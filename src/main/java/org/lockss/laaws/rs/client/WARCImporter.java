@@ -311,11 +311,11 @@ public class WARCImporter {
 	Artifact artifact = repository.addArtifact(artifactData);
 	log.debug("Uploaded artifact: {}", () -> artifact);
 
-	String artifactId = artifact.getId();
+	String artifactUuid = artifact.getUuid();
 
 	// Commit artifact immediately
-	repository.commitArtifact(namespace, artifactId);
-	log.info("Committed artifactId: {}", artifactId);
+	repository.commitArtifact(namespace, artifactUuid);
+	log.info("Committed artifact [uuid: {}]", artifactUuid);
 
 	importedCount++;
       } else {
