@@ -32,21 +32,26 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 package org.lockss.laaws.rs.client;
 
-import org.apache.commons.cli.*;
+import org.apache.commons.cli.CommandLine;
+import org.apache.commons.cli.DefaultParser;
+import org.apache.commons.cli.Options;
+import org.apache.commons.cli.ParseException;
 import org.archive.format.warc.WARCConstants;
 import org.archive.io.ArchiveRecord;
 import org.archive.io.ArchiveRecordHeader;
 import org.archive.io.warc.WARCReaderFactory;
-import org.lockss.laaws.rs.core.LocalLockssRepository;
-import org.lockss.laaws.rs.core.LockssRepository;
-import org.lockss.laaws.rs.core.RestLockssRepository;
-import org.lockss.laaws.rs.model.Artifact;
-import org.lockss.laaws.rs.model.ArtifactData;
-import org.lockss.laaws.rs.model.ArtifactIdentifier;
-import org.lockss.laaws.rs.util.ArtifactDataFactory;
 import org.lockss.log.L4JLogger;
+import org.lockss.rs.LocalLockssRepository;
+import org.lockss.rs.io.storage.warc.WarcArtifactData;
 import org.lockss.util.io.FileUtil;
-import java.io.*;
+import org.lockss.util.rest.repo.LockssRepository;
+import org.lockss.util.rest.repo.RestLockssRepository;
+import org.lockss.util.rest.repo.model.Artifact;
+import org.lockss.util.rest.repo.model.ArtifactData;
+import org.lockss.util.rest.repo.model.ArtifactIdentifier;
+
+import java.io.File;
+import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.Arrays;
@@ -279,7 +284,7 @@ public class WARCImporter {
 	  ));
 
       // Convert ArchiveRecord to ArtifactData
-      ArtifactData artifactData = ArtifactDataFactory.fromArchiveRecord(record);
+      ArtifactData artifactData = WarcArtifactData.fromArchiveRecord(record);
       log.trace("artifactData: {}", () -> artifactData);
 
       // Upload artifact
