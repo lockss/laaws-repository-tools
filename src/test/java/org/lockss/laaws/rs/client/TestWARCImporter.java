@@ -32,19 +32,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 package org.lockss.laaws.rs.client;
 
-import static org.archive.format.warc.WARCConstants.HEADER_KEY_IP;
-import java.io.ByteArrayInputStream;
-import java.io.File;
-import java.io.IOException;
-import java.net.URI;
-import java.time.Instant;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.http.ProtocolVersion;
 import org.apache.http.message.BasicStatusLine;
 import org.archive.format.warc.WARCConstants;
@@ -58,11 +45,26 @@ import org.archive.uid.UUIDGenerator;
 import org.archive.util.ArchiveUtils;
 import org.archive.util.anvl.ANVLRecord;
 import org.junit.jupiter.api.Test;
-import org.lockss.laaws.rs.core.LockssRepository;
-import org.lockss.laaws.rs.model.Artifact;
-import org.lockss.laaws.rs.model.ArtifactSpec;
 import org.lockss.log.L4JLogger;
+import org.lockss.util.rest.repo.LockssRepository;
+import org.lockss.util.rest.repo.model.Artifact;
+import org.lockss.util.rest.repo.util.ArtifactSpec;
 import org.lockss.util.test.LockssTestCase5;
+
+import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.io.IOException;
+import java.net.URI;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.archive.format.warc.WARCConstants.HEADER_KEY_IP;
 
 /**
  * Test class for org.lockss.laaws.rs.client.WARCImporter.
