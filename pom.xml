@@ -59,6 +59,13 @@ POSSIBILITY OF SUCH DAMAGE.
 
   <dependencies>
 
+    <!-- Uses logging -->
+    <dependency>
+      <groupId>org.lockss</groupId>
+      <artifactId>lockss-util-base</artifactId>
+      <version>${version.lockss.lockss-util}</version>
+    </dependency>
+
     <dependency>
       <groupId>org.lockss</groupId>
       <artifactId>lockss-junit5-bundle</artifactId>
