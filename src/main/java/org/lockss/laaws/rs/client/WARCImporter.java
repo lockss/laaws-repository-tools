@@ -42,7 +42,7 @@ import org.archive.io.ArchiveRecordHeader;
 import org.archive.io.warc.WARCReaderFactory;
 import org.lockss.log.L4JLogger;
 import org.lockss.rs.LocalLockssRepository;
-import org.lockss.rs.io.storage.warc.WarcArtifactData;
+import org.lockss.rs.io.storage.warc.WarcArtifactDataUtil;
 import org.lockss.util.io.FileUtil;
 import org.lockss.util.rest.repo.LockssRepository;
 import org.lockss.util.rest.repo.RestLockssRepository;
@@ -284,7 +284,7 @@ public class WARCImporter {
 	  ));
 
       // Convert ArchiveRecord to ArtifactData
-      ArtifactData artifactData = WarcArtifactData.fromArchiveRecord(record);
+      ArtifactData artifactData = WarcArtifactDataUtil.fromArchiveRecord(record);
       log.trace("artifactData: {}", () -> artifactData);
 
       // Upload artifact
