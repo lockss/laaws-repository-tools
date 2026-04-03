@@ -1,5 +1,12 @@
 # `laaws-repository-tools` Release Notes
 
+## 2.14.0 (LOCKSS 2.0.91-beta2)
+
+### Features
+
+* Removed `WarcArtifactData`; refactored its utility methods into `WarcArtifactDataUtil`.
+ 
+
 ## Changes Since 2.0.8.0
 
 *   ...
