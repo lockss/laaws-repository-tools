@@ -94,6 +94,35 @@ POSSIBILITY OF SUCH DAMAGE.
       <version>${version.dependency.commons-cli}</version>
     </dependency>
 
+    <!--
+      Force jackson-core/jackson-annotations to the same release as jackson-databind
+      (2.16.1, pulled in via lockss-util-rest). Without this, solr-core's direct
+      dependency on jackson-core/jackson-annotations:2.13.3 wins Maven's nearest-wins
+      mediation over every path that wants 2.14.x/2.16.1 (confirmed via
+      `mvn dependency:tree -Dverbose` - every 2.14.x/2.16.1 request is "omitted for
+      conflict with 2.13.3"), leaving jackson-databind:2.16.1 running against a
+      mismatched, older jackson-core/annotations. Databind and core/annotations are
+      not independently version-compatible across minor releases; the actual failure
+      this produces is deterministic and 100% reproducible, not intermittent:
+      java.lang.NoSuchFieldError: READ_UNKNOWN_ENUM_VALUES_USING_DEFAULT_VALUE, thrown
+      from WarcArtifactDataStore.getJournalForWarc()'s Jackson-based deserialization of
+      WarcArtifactStateEntry - i.e. any real WARC directory with its normal accompanying
+      .metadata.warc journal file present triggers this immediately. A direct dependency
+      declaration here is depth-0 and so always wins mediation regardless of solr-core's
+      own declared version, without needing to exclude or modify solr-core's dependencies.
+    -->
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-core</artifactId>
+      <version>2.16.1</version>
+    </dependency>
+
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-annotations</artifactId>
+      <version>2.16.1</version>
+    </dependency>
+
     <!-- https://mvnrepository.com/artifact/org.junit.platform/junit-platform-console-standalone -->
     <!-- FIXME: is this needed? -->
     <dependency>
@@ -132,4 +161,70 @@ POSSIBILITY OF SUCH DAMAGE.
     </dependency>
 
   </dependencies>
+
+  <build>
+    <plugins>
+      <!--
+        Packages the reindex-parse benchmark tool (org.lockss.laaws.rs.tools.reindexbench) as a
+        single self-contained, portable executable jar via a DEDICATED shade execution bound to
+        `package`. This is intentionally separate from this module's existing
+        spring-boot-maven-plugin `repackageJar` execution (see parent pom), which already
+        produces a Spring-Boot-repackaged "-with-deps" jar for SolrArtifactIndexAdmin: that jar's
+        classes live under BOOT-INF/classes with dependencies as nested jars, so it cannot satisfy
+        `java -cp <jar> ...ManifestHelper` (plain classpath lookup) or a direct Main-Class manifest
+        entry pointing at ReindexParseBenchmark - both required here. A flat shaded jar is the only
+        shape that satisfies both, so maven-shade-plugin is used here even though
+        spring-boot-maven-plugin is this codebase's only other existing fat-jar mechanism.
+
+        Scoped via shadedArtifactAttached + a dedicated "reindexbench" classifier so this module's
+        normal (classifier-less) jar output and its existing repackageJar execution are completely
+        unaffected - `mvn install` still produces the same primary artifact for any consumer.
+      -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>3.6.0</version>
+        <executions>
+          <execution>
+            <id>shade-reindexbench</id>
+            <phase>package</phase>
+            <goals>
+              <goal>shade</goal>
+            </goals>
+            <configuration>
+              <shadedArtifactAttached>true</shadedArtifactAttached>
+              <shadedClassifierName>reindexbench</shadedClassifierName>
+              <createDependencyReducedPom>false</createDependencyReducedPom>
+              <filters>
+                <filter>
+                  <artifact>*:*</artifact>
+                  <excludes>
+                    <exclude>META-INF/*.SF</exclude>
+                    <exclude>META-INF/*.DSA</exclude>
+                    <exclude>META-INF/*.RSA</exclude>
+                  </excludes>
+                </filter>
+              </filters>
+              <transformers>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                  <mainClass>org.lockss.laaws.rs.tools.reindexbench.ReindexParseBenchmark</mainClass>
+                  <!-- log4j-api ships as a multi-release jar (Java 9+ StackWalker-based caller
+                       resolution under META-INF/versions/9/). Without re-declaring Multi-Release:
+                       true on the shaded jar's own manifest, the JVM ignores those version-9
+                       classes, log4j falls back to a legacy caller-resolution path that no longer
+                       exists on JDK 17, and every logger initialization throws
+                       UnsupportedOperationException. Confirmed empirically: omitting this line
+                       reproduces exactly that failure from the shaded jar. -->
+                  <manifestEntries>
+                    <Multi-Release>true</Multi-Release>
+                  </manifestEntries>
+                </transformer>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
+              </transformers>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
 </project>
